@@ -313,3 +313,16 @@ TFHE-rs TODO
 1. Under polynomial karatsuba multiplication [here](https://github.com/zama-ai/tfhe-rs/blob/80b5ce7f63a985be2a7d3bc636729e1c8e24a334/tfhe/src/core_crypto/algorithms/polynomial_algorithms.rs#L549).
 2. Replace definitions of base decompositions such that we don't have to assume $\beta l = q$.
 3. 
+
+
+
+
+To encrypt message m we must calculate
+[
+    GLWE(0),
+    .
+    .             +
+    .            
+    .
+    GLWE(0)
+]

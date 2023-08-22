@@ -1,4 +1,4 @@
-use crate::utils::{poly_mul_add_list, sample_binary_array, sample_gaussian, sample_uniform_array};
+use crate::utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array};
 use ndarray::{concatenate, s, Array1, Array2, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
 use std::ops::{Add, AddAssign};

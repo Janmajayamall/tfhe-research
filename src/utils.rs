@@ -119,7 +119,7 @@ pub fn poly_mul(p0: ArrayView1<u32>, p1: ArrayView1<u32>) -> Array1<u32> {
 }
 
 /// multiply the polynomials and add them
-pub fn poly_mul_add_list(p0: &ArrayView2<u32>, p1: &ArrayView2<u32>) -> Array1<u32> {
+pub fn poly_dot_product(p0: &ArrayView2<u32>, p1: &ArrayView2<u32>) -> Array1<u32> {
     let mut res = poly_mul(p0.row(0), p1.row(0));
     izip!(p0.outer_iter(), p1.outer_iter())
         .skip(1)

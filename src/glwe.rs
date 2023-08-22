@@ -1,5 +1,5 @@
 use crate::utils::{
-    poly_mul_add_list, sample_binary_array, sample_gaussian, sample_gaussian_array,
+    poly_dot_product, sample_binary_array, sample_gaussian, sample_gaussian_array,
     sample_uniform_array,
 };
 use itertools::{izip, Itertools};
@@ -10,14 +10,14 @@ use std::ops::{Add, AddAssign};
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 pub struct GlweParams {
-    k: usize,
-    N: usize,
+    pub(crate) k: usize,
+    pub(crate) N: usize,
     /// q in Z/2^qZ
-    log_q: usize,
+    pub(crate) log_q: usize,
     /// p in Z/2^pZ
-    log_p: usize,
-    mean: f64,
-    std_dev: f64,
+    pub(crate) log_p: usize,
+    pub(crate) mean: f64,
+    pub(crate) std_dev: f64,
 }
 
 impl Default for GlweParams {
@@ -85,7 +85,7 @@ impl GlweSecretKey {
 /// RLWE
 #[derive(Debug, Clone)]
 pub struct GlweCiphertext {
-    data: Array2<u32>,
+    pub(crate) data: Array2<u32>,
 }
 
 pub fn encrypt_glwe_zero<R: CryptoRng + RngCore>(
@@ -95,7 +95,7 @@ pub fn encrypt_glwe_zero<R: CryptoRng + RngCore>(
 ) -> GlweCiphertext {
     let a_samples = sample_uniform_array(rng, (glwe_params.k, glwe_params.N));
 
-    let mut a_s = poly_mul_add_list(&a_samples.view(), &sk.data.view());
+    let mut a_s = poly_dot_product(&a_samples.view(), &sk.data.view());
 
     // sample error
     let error = sample_gaussian_array(glwe_params.mean, glwe_params.std_dev, rng, (glwe_params.N));
@@ -134,7 +134,7 @@ pub fn decrypt_glwe_ciphertext<R: CryptoRng + RngCore>(
     rng: &mut R,
 ) -> GlwePlaintext {
     let a_samples = ct.data.slice(s![..glwe_params.k, ..]);
-    let mut a_s = poly_mul_add_list(&a_samples, &sk.data.view());
+    let mut a_s = poly_dot_product(&a_samples, &sk.data.view());
 
     // b - \sum a*s
     let mut plaintext = Array1::from_vec(ct.data.row(glwe_params.k).to_vec());
