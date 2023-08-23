@@ -1,12 +1,13 @@
-use ndarray::{s, Array};
+use ndarray::{concatenate, s, Array, Array3, Axis};
 use rand::{CryptoRng, RngCore};
 
 use crate::{
-    decomposer::DecomposerParams,
+    decomposer::{DecomposerParams, SignedDecomposer},
     glwe::{
-        encrypt_glwe_plaintext, encrypt_glwe_zero, GlweCiphertext, GlweCleartext, GlweParams,
-        GlweSecretKey,
+        decompose_glwe_ciphertext, encrypt_glwe_plaintext, encrypt_glwe_zero, GlweCiphertext,
+        GlweCleartext, GlweParams, GlweSecretKey,
     },
+    utils::poly_dot_product,
 };
 
 /// Although message must be a polynomial in Z_{N,q}[X] we only require
@@ -24,7 +25,7 @@ impl Default for GgswParams {
     fn default() -> Self {
         let glwe_params = GlweParams::default();
         let decomposer_params = DecomposerParams {
-            log_base: 2,
+            log_base: 4,
             levels: 8,
             log_q: glwe_params.log_q,
         };
@@ -38,7 +39,7 @@ impl Default for GgswParams {
 struct GgswCiphertext {
     /// Contains (k+1)l glwe ciphertext. Vector of GLWE ciphertexts must be viewed as a matrix with each row
     ///  consisting of polynomials forming single GLWE ciphertext.
-    data: Vec<GlweCiphertext>,
+    data: Array3<u32>,
 }
 
 /**
@@ -80,26 +81,142 @@ fn encrypt_ggsw_plaintext<R: CryptoRng + RngCore>(
     ggsw_params: &GgswParams,
     rng: &mut R,
 ) -> GgswCiphertext {
-    let mut ggsw_ct = vec![];
+    let mut ggsw_matrix = None;
     for i in 0..(ggsw_params.glwe_params.k + 1) {
         // which of the polynomial in zero encryption to add constant value `m*decomposition_factor`
         let add_index = i;
 
-        for level in (0..ggsw_params.decomposer_params.levels).rev() {
+        // levels indicate how many most significant legs of the decomposition by base should be includes. For
+        // ex, log_base 4 and levels 6 means we require precision of only 24 most significant bits. This translates to
+        // constructing gadget matrix with value {B^{l-1}, ..., B^{l-levels}} where l = log_q / log_base
+        let log_q_by_log_base =
+            ggsw_params.glwe_params.log_q / ggsw_params.decomposer_params.log_base;
+        for level_index in 0..ggsw_params.decomposer_params.levels {
             let mut zero_encryption = encrypt_glwe_zero(&ggsw_params.glwe_params, sk, rng);
 
             // only add when message is not zero
             if plaintext.message != 0 {
-                // m * \beta^{l-x}
-                let decomposition_factor =
-                    plaintext.message * (1 << (ggsw_params.decomposer_params.log_base * level));
-
+                // m * \beta^{l-(level_index+1)}
+                let decomposition_factor = plaintext.message
+                    * (1 << (ggsw_params.decomposer_params.log_base
+                        * (log_q_by_log_base - (level_index + 1))));
                 let value = zero_encryption.data.get_mut((add_index, 0)).unwrap();
                 *value = value.wrapping_add(decomposition_factor);
             }
-            ggsw_ct.push(zero_encryption);
+
+            // add another axis to convert 2d array to 3d array, so that each GLWE ciphertext
+            // becomes a row at Axis(0) with polynomial elements at Axis(1). We can access
+            // a i^th polynomial of j^th row as array[j][i].
+            // zero_encryption.data.row
+            let tmp = zero_encryption.clone();
+            let data = zero_encryption.data.insert_axis(Axis(0));
+
+            {
+                let s = data.slice(s![0, 1, ..]);
+                assert_eq!(s, tmp.data.row(1));
+            }
+
+            if ggsw_matrix.is_none() {
+                ggsw_matrix = Some(data);
+            } else {
+                ggsw_matrix = Some(
+                    concatenate(Axis(0), &vec![ggsw_matrix.unwrap().view(), data.view()]).unwrap(),
+                );
+            }
         }
     }
 
-    GgswCiphertext { data: ggsw_ct }
+    GgswCiphertext {
+        data: ggsw_matrix.unwrap(),
+    }
+}
+
+fn external_product(
+    ggsw_params: &GgswParams,
+    ggsw_ciphertext: &GgswCiphertext,
+    glwe_ciphertext: &GlweCiphertext,
+) -> GlweCiphertext {
+    let signed_decomposer = SignedDecomposer::new(ggsw_params.decomposer_params.clone());
+    let decomposed_glwe_ciphertext = decompose_glwe_ciphertext(glwe_ciphertext, &signed_decomposer);
+
+    // In ggsw each GLWE ciphertext corresponds to a row
+    let k = ggsw_params.glwe_params.k;
+    let mut glwe_ciphertext = None;
+
+    for ggsw_col in 0..k + 1 {
+        let col = ggsw_ciphertext.data.slice(s![.., ggsw_col, ..]);
+        let res = poly_dot_product(&decomposed_glwe_ciphertext.view(), &col.view());
+        let res = res.insert_axis(Axis(0));
+
+        if glwe_ciphertext.is_none() {
+            glwe_ciphertext = Some(res);
+        } else {
+            glwe_ciphertext = Some(
+                concatenate(Axis(0), &vec![glwe_ciphertext.unwrap().view(), res.view()]).unwrap(),
+            );
+        }
+    }
+
+    GlweCiphertext {
+        data: glwe_ciphertext.unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::thread_rng;
+
+    use crate::glwe::decrypt_glwe_ciphertext;
+
+    use super::*;
+
+    #[test]
+    fn ggsw_encryption_works() {
+        let mut rng = thread_rng();
+        let ggsw_params = GgswParams::default();
+        let glwe_sk = GlweSecretKey::random(&ggsw_params.glwe_params, &mut rng);
+        let ggsw_ciphertext = encrypt_ggsw_plaintext(
+            &GgswPlaintext { message: 3 },
+            &glwe_sk,
+            &ggsw_params,
+            &mut rng,
+        );
+        dbg!(ggsw_ciphertext.data.slice(s![0..40, 0, ..]).shape());
+    }
+
+    #[test]
+    fn external_product_works() {
+        let mut rng = thread_rng();
+
+        // GGSW
+        let ggsw_params = GgswParams::default();
+        let glwe_sk = GlweSecretKey::random(&ggsw_params.glwe_params, &mut rng);
+        let ggsw_ciphertext = encrypt_ggsw_plaintext(
+            &GgswPlaintext { message: 2 },
+            &glwe_sk,
+            &ggsw_params,
+            &mut rng,
+        );
+
+        // GLWE
+        let message = vec![3; ggsw_params.glwe_params.N];
+        let glwe_plaintext = GlweCleartext::encode_message(&message, &ggsw_params.glwe_params);
+        let glwe_ciphertext = encrypt_glwe_plaintext(
+            &ggsw_params.glwe_params,
+            &glwe_plaintext,
+            &glwe_sk,
+            &mut rng,
+        );
+
+        let res_ciphertext = external_product(&ggsw_params, &ggsw_ciphertext, &glwe_ciphertext);
+
+        let res_plaintext = decrypt_glwe_ciphertext(
+            &ggsw_params.glwe_params,
+            &glwe_sk,
+            &res_ciphertext,
+            &mut rng,
+        );
+        let res_message = res_plaintext.decode(&ggsw_params.glwe_params);
+        dbg!(res_message);
+    }
 }

@@ -1,11 +1,57 @@
-use crate::utils::{
-    poly_dot_product, sample_binary_array, sample_gaussian, sample_gaussian_array,
-    sample_uniform_array,
+use crate::{
+    decomposer::SignedDecomposer,
+    utils::{
+        poly_dot_product, sample_binary_array, sample_gaussian, sample_gaussian_array,
+        sample_uniform_array,
+    },
 };
 use itertools::{izip, Itertools};
-use ndarray::{concatenate, s, Array1, Array2, Axis};
+use ndarray::{concatenate, s, Array1, Array2, ArrayView1, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
 use std::ops::{Add, AddAssign};
+
+/// Decomposes the polynomial into level polynomials by decomposing each coefficient into levels.
+/// Returns a 2d array for levels x degree u32 values with each row contaning one polynomial.
+fn decompose_poly(poly: &ArrayView1<u32>, signed_decomposer: &SignedDecomposer) -> Array2<u32> {
+    let mut decomposed_poly_matrix =
+        Array2::zeros((signed_decomposer.params.levels, poly.shape()[0]));
+
+    izip!(decomposed_poly_matrix.axis_iter_mut(Axis(1)), poly.iter()).for_each(
+        |(mut term_col, term)| {
+            let decomposed = signed_decomposer.decompose(*term);
+            // can't copy as slice since `decomposed_poly_matrix` is store in row major
+            // form and term_col is not stored in contiguous memory (`as_slice` will panic)
+            izip!(term_col.iter_mut(), decomposed.iter()).for_each(|(v0, v1)| {
+                *v0 = *v1;
+            });
+        },
+    );
+
+    decomposed_poly_matrix
+}
+
+/// Recall that GLWE ciphertext is stored as a 2d array with k+1 rows, where each row is a polynomial.
+/// After decomposition we transform the ciphertext into (k+1)*l rows where each set of l rows correspond
+/// to decomposed polynomials of a single polynmoial.
+pub fn decompose_glwe_ciphertext(
+    glwe_ciphertext: &GlweCiphertext,
+    signed_decomposer: &SignedDecomposer,
+) -> Array2<u32> {
+    // We handle first row separately to avoid unecessary copies
+    let mut decomposed_polys =
+        decompose_poly(&glwe_ciphertext.data.row(0).view(), signed_decomposer);
+    glwe_ciphertext.data.outer_iter().skip(1).for_each(|poly| {
+        decomposed_polys = concatenate(
+            Axis(0),
+            &vec![
+                decomposed_polys.view(),
+                decompose_poly(&poly.view(), signed_decomposer).view(),
+            ],
+        )
+        .unwrap();
+    });
+    decomposed_polys
+}
 
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]
@@ -23,8 +69,8 @@ pub struct GlweParams {
 impl Default for GlweParams {
     fn default() -> Self {
         GlweParams {
-            k: 4,
-            N: 512,
+            k: 2,
+            N: 8,
             /// q in Z/2^qZ
             log_q: 32,
             /// p in Z/2^pZ
@@ -35,6 +81,7 @@ impl Default for GlweParams {
     }
 }
 
+#[derive(Debug)]
 pub struct GlweCleartext {
     message: Vec<u32>,
 }
@@ -151,6 +198,8 @@ pub fn decrypt_glwe_ciphertext<R: CryptoRng + RngCore>(
 
 #[cfg(test)]
 mod tests {
+    use crate::decomposer::DecomposerParams;
+
     use super::*;
     use rand::{distributions::Uniform, thread_rng, Rng};
 
@@ -174,5 +223,18 @@ mod tests {
 
         let glwe_cleartext_back: GlweCleartext = glwe_plaintext_back.decode(&glwe_params);
         assert_eq!(message, glwe_cleartext_back.message);
+    }
+
+    #[test]
+    fn decompose_glwe_works() {
+        let mut rng = thread_rng();
+        let glwe_params = GlweParams::default();
+        let glwe_sk = GlweSecretKey::random(&glwe_params, &mut rng);
+        let glwe_ciphertext = encrypt_glwe_zero(&glwe_params, &glwe_sk, &mut rng);
+        let signed_decomposer =
+            SignedDecomposer::new(DecomposerParams::new(4, 8, glwe_params.log_q));
+        let decomposed_glwe_ciphertext =
+            decompose_glwe_ciphertext(&glwe_ciphertext, &signed_decomposer);
+        dbg!(decomposed_glwe_ciphertext);
     }
 }

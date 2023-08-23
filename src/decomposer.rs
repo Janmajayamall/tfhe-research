@@ -1,19 +1,40 @@
+#[derive(Clone, Debug)]
 pub struct DecomposerParams {
     pub(crate) log_base: usize,
     pub(crate) levels: usize,
     pub(crate) log_q: usize,
 }
 
-struct SignedDecomposer {
-    params: DecomposerParams,
+impl DecomposerParams {
+    pub fn new(log_base: usize, levels: usize, log_q: usize) -> DecomposerParams {
+        DecomposerParams {
+            log_base,
+            levels,
+            log_q,
+        }
+    }
+}
+
+impl Default for DecomposerParams {
+    fn default() -> Self {
+        DecomposerParams {
+            log_base: 4,
+            levels: 8,
+            log_q: 32,
+        }
+    }
+}
+
+pub struct SignedDecomposer {
+    pub(crate) params: DecomposerParams,
 }
 
 impl SignedDecomposer {
-    fn new(params: DecomposerParams) -> SignedDecomposer {
+    pub fn new(params: DecomposerParams) -> SignedDecomposer {
         SignedDecomposer { params }
     }
 
-    fn round_value(&self, value: u32) -> u32 {
+    pub fn round_value(&self, value: u32) -> u32 {
         let ignored_bits = self.params.log_q - self.params.log_base * self.params.levels;
 
         if ignored_bits == 0 {
@@ -28,7 +49,7 @@ impl SignedDecomposer {
         ((value >> ignored_bits) + ignored_msb) << ignored_bits
     }
 
-    fn decompose(&self, value: u32) -> Vec<u32> {
+    pub fn decompose(&self, value: u32) -> Vec<u32> {
         let mut decomposition = vec![];
 
         // round the value to precision
@@ -46,7 +67,7 @@ impl SignedDecomposer {
             let carry_mask = res & base_by_2_mask;
 
             // subtract B from ` only when res >= B/2
-            res = (res as i32 - (carry_mask << 1) as i32) as u32;
+            res = res.wrapping_sub(carry_mask << 1);
 
             // set carry
             carry = carry_mask >> (log_base - 1);
@@ -68,8 +89,8 @@ impl SignedDecomposer {
         decomposition
     }
 
-    // MSB -> LSB
-    fn recompose(&self, legs: &[u32]) -> u32 {
+    // legs are in BigEndian (ie MSB...LSB)
+    pub fn recompose(&self, legs: &[u32]) -> u32 {
         let levels = self.params.levels;
         let log_base = self.params.log_base;
 
