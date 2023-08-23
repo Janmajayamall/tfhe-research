@@ -10,6 +10,7 @@ use std::ops::{Add, AddAssign};
 pub struct LweParams {
     pub(crate) n: usize,
     /// q in Z/2^qZ
+    pub(crate) padding_bits: usize,
     pub(crate) log_q: usize,
     /// p in Z/2^pZ
     pub(crate) log_p: usize,
@@ -22,6 +23,7 @@ impl Default for LweParams {
         LweParams {
             n: 512,
             log_q: 32,
+            padding_bits: 1,
             log_p: 8,
             mean: 0.0,
             std_dev: 0.121312,
@@ -67,7 +69,7 @@ impl LweCleartext {
     pub fn encode_message(m: u32, lwe_params: &LweParams) -> LwePlaintext {
         assert!(m < 1u32 << lwe_params.log_p);
         LwePlaintext {
-            data: m << (lwe_params.log_q - lwe_params.log_p),
+            data: m << (lwe_params.log_q - (lwe_params.log_p + lwe_params.padding_bits)),
         }
     }
 }
@@ -81,7 +83,7 @@ pub struct LwePlaintext {
 impl LwePlaintext {
     pub fn decode(&self, lwe_params: &LweParams) -> LweCleartext {
         LweCleartext {
-            message: self.data >> (lwe_params.log_q - lwe_params.log_p),
+            message: self.data >> (lwe_params.log_q - (lwe_params.log_p + lwe_params.padding_bits)),
         }
     }
 }

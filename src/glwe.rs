@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use itertools::{izip, Itertools};
-use ndarray::{concatenate, s, Array1, Array2, ArrayView1, Axis};
+use ndarray::{concatenate, s, Array, Array1, Array2, ArrayView1, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
@@ -89,7 +89,8 @@ pub fn decompose_glwe_ciphertext(
 #[derive(Debug, Clone)]
 pub struct GlweParams {
     pub(crate) k: usize,
-    pub(crate) N: usize,
+    pub(crate) log_degree: usize,
+    pub(crate) padding_bits: usize,
     /// q in Z/2^qZ
     pub(crate) log_q: usize,
     /// p in Z/2^pZ
@@ -98,13 +99,21 @@ pub struct GlweParams {
     pub(crate) std_dev: f64,
 }
 
+impl GlweParams {
+    #[inline]
+    pub fn degree(&self) -> usize {
+        1 << self.log_degree
+    }
+}
+
 impl Default for GlweParams {
     fn default() -> Self {
         GlweParams {
             k: 2,
-            N: 512,
+            log_degree: 9,
             /// q in Z/2^qZ
             log_q: 32,
+            padding_bits: 1,
             /// p in Z/2^pZ
             log_p: 8,
             mean: 0.0,
@@ -119,10 +128,10 @@ pub struct GlweCleartext {
 }
 impl GlweCleartext {
     pub fn encode_message(message: &[u32], glwe_params: &GlweParams) -> GlwePlaintext {
-        let mut data = vec![0u32; glwe_params.N];
+        let mut data = vec![0u32; glwe_params.degree()];
         izip!(data.iter_mut(), message.iter()).for_each(|(d, m)| {
             assert!(*m < 1u32 << glwe_params.log_p);
-            *d = *m << (glwe_params.log_q - glwe_params.log_p);
+            *d = *m << (glwe_params.log_q - (glwe_params.log_p + glwe_params.padding_bits));
         });
 
         GlwePlaintext {
@@ -133,7 +142,7 @@ impl GlweCleartext {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlwePlaintext {
-    data: Array1<u32>,
+    pub(crate) data: Array1<u32>,
 }
 
 impl GlwePlaintext {
@@ -141,7 +150,7 @@ impl GlwePlaintext {
         let message = self
             .data
             .iter()
-            .map(|m| *m >> (glwe_params.log_q - glwe_params.log_p))
+            .map(|m| *m >> (glwe_params.log_q - (glwe_params.log_p + glwe_params.padding_bits)))
             .collect_vec();
 
         GlweCleartext { message }
@@ -156,7 +165,7 @@ pub struct GlweSecretKey {
 impl GlweSecretKey {
     pub fn random<R: CryptoRng + RngCore>(glwe_params: &GlweParams, rng: &mut R) -> GlweSecretKey {
         GlweSecretKey {
-            data: sample_binary_array(rng, (glwe_params.k, glwe_params.N)),
+            data: sample_binary_array(rng, (glwe_params.k, glwe_params.degree())),
         }
     }
 }
@@ -172,12 +181,17 @@ pub fn encrypt_glwe_zero<R: CryptoRng + RngCore>(
     sk: &GlweSecretKey,
     rng: &mut R,
 ) -> GlweCiphertext {
-    let a_samples = sample_uniform_array(rng, (glwe_params.k, glwe_params.N));
+    let a_samples = sample_uniform_array(rng, (glwe_params.k, glwe_params.degree()));
 
     let mut a_s = poly_dot_product(&a_samples.view(), &sk.data.view());
 
     // sample error
-    let error = sample_gaussian_array(glwe_params.mean, glwe_params.std_dev, rng, (glwe_params.N));
+    let error = sample_gaussian_array(
+        glwe_params.mean,
+        glwe_params.std_dev,
+        rng,
+        (glwe_params.degree()),
+    );
 
     // \sum a*s + e
     a_s.add_assign(&error);
@@ -204,6 +218,19 @@ pub fn encrypt_glwe_plaintext<R: CryptoRng + RngCore>(
     .for_each(|(c, m)| *c = c.wrapping_add(*m));
 
     zero_encryption
+}
+
+pub fn trivial_encrypt_glwe_plaintext(
+    glwe_params: &GlweParams,
+    glwe_plaintext: &GlwePlaintext,
+) -> GlweCiphertext {
+    let mut data = Array2::zeros((glwe_params.k + 1, glwe_params.degree()));
+    data.row_mut(glwe_params.k)
+        .as_slice_mut()
+        .unwrap()
+        .copy_from_slice(glwe_plaintext.data.as_slice().unwrap());
+
+    GlweCiphertext { data: data }
 }
 
 pub fn decrypt_glwe_ciphertext<R: CryptoRng + RngCore>(
@@ -242,7 +269,7 @@ mod tests {
         let message = rng
             .clone()
             .sample_iter(Uniform::new(0, 1 << glwe_params.log_p))
-            .take(glwe_params.N)
+            .take(glwe_params.degree())
             .collect_vec();
         let glwe_plaintext = GlweCleartext::encode_message(&message, &glwe_params);
         let glwe_sk = GlweSecretKey::random(&glwe_params, &mut rng);

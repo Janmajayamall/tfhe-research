@@ -1,17 +1,19 @@
-use crate::{glwe::GlweParams, lwe::LweParams};
+use ndarray::Array1;
 
-pub fn construct_test_vector(glwe_params: &GlweParams, lwe_params: &LweParams) -> Vec<u32> {
+use crate::{glwe::GlweParams, lwe::LweParams, TfheParams};
+
+pub fn construct_test_vector(tfhe_params: &TfheParams) -> Array1<u32> {
     // iterate over possible inputs
     // For now we limit to identity function
     let mut lookup_table = vec![];
-    for i in 0..(1 << lwe_params.log_p) {
+    for i in 0..(1 << tfhe_params.log_p) {
         lookup_table.push(i as u32);
     }
 
     // construct test vector
     let mut test_vector = vec![];
-    // We must assure that 2^{log_p}| glwe_params.N
-    let repetition = glwe_params.N / (1 << lwe_params.log_p);
+    // We must assure that 2^{log_p}| degree
+    let repetition = (1 << tfhe_params.log_degree) / (1 << tfhe_params.log_p);
     // repeat each look up value `repetition` times
     lookup_table.iter().for_each(|v| {
         for _ in 0..repetition {
@@ -27,33 +29,24 @@ pub fn construct_test_vector(glwe_params: &GlweParams, lwe_params: &LweParams) -
     }
     test_vector.rotate_left(repetition / 2);
 
-    test_vector
+    // scale test vector
+    test_vector.iter_mut().for_each(|v| {
+        *v = *v << (tfhe_params.log_q - tfhe_params.log_p);
+    });
+
+    Array1::from_vec(test_vector)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{glwe::GlweParams, lwe::LweParams};
+    use crate::{glwe::GlweParams, lwe::LweParams, TfheParams};
 
     use super::construct_test_vector;
 
     #[test]
     fn test_vector_works() {
-        let glwe_params = GlweParams {
-            k: 2,
-            N: 512,
-            log_q: 32,
-            log_p: 8,
-            mean: 0.0,
-            std_dev: 0.0,
-        };
-        let lwe_params = LweParams {
-            n: 512,
-            log_q: 32,
-            log_p: 8,
-            mean: 0.0,
-            std_dev: 0.0,
-        };
-        let test_vector = construct_test_vector(&glwe_params, &lwe_params);
+        let tfhe_params = TfheParams::default();
+        let test_vector = construct_test_vector(&tfhe_params);
         dbg!(test_vector);
     }
 }

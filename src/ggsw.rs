@@ -12,13 +12,19 @@ use crate::{
 
 /// Although message must be a polynomial in Z_{N}[X] we only require
 /// Ggsw ciphertexts to encrypt bits of LWE secret key for PBS.
-struct GgswPlaintext {
+pub struct GgswPlaintext {
     message: u32,
 }
 
-struct GgswParams {
-    glwe_params: GlweParams,
-    decomposer_params: DecomposerParams,
+impl GgswPlaintext {
+    pub fn new(message: u32) -> GgswPlaintext {
+        GgswPlaintext { message }
+    }
+}
+
+pub struct GgswParams {
+    pub(crate) glwe_params: GlweParams,
+    pub(crate) decomposer_params: DecomposerParams,
 }
 
 impl Default for GgswParams {
@@ -36,7 +42,7 @@ impl Default for GgswParams {
     }
 }
 
-struct GgswCiphertext {
+pub struct GgswCiphertext {
     /// Stored as 3D array of u32s. First 2 dimension must be viewed as a matrix with polynomial elements. Each row of the matrix contains a single GLWE ciphertext.
     /// You can access polynomial at i^th col and j^th row as data[j][i]
     data: Array3<u32>,
@@ -75,7 +81,7 @@ the polynomials from {a_0, a_1, a_2, ..., b}. And the one to add to depends on
 the row we at. For example, for 1st l rows must add to a_0, then for second l
 rows we must add to a_1, and the pattern continues...To be exact, i = row / l.
  */
-fn encrypt_ggsw_plaintext<R: CryptoRng + RngCore>(
+pub fn encrypt_ggsw_plaintext<R: CryptoRng + RngCore>(
     plaintext: &GgswPlaintext,
     sk: &GlweSecretKey,
     ggsw_params: &GgswParams,
@@ -163,7 +169,7 @@ fn external_product(
 }
 
 /// CMUX gate that either returns `glwe_ciphertext0` or `glwe_ciphertext1` depending on whether `ggsw_ciphertext` is encryption of 0 or 1, respecitvely.
-fn cmux(
+pub fn cmux(
     ggsw_params: &GgswParams,
     ggsw_ciphertext: &GgswCiphertext,
     glwe_ciphertext0: &GlweCiphertext,
@@ -198,7 +204,7 @@ mod tests {
             &ggsw_params,
             &mut rng,
         );
-        dbg!(ggsw_ciphertext.data.slice(s![0..40, 0, ..]).shape());
+        // dbg!(ggsw_ciphertext.data.slice(s![0..40, 0, ..]).shape());
     }
 
     #[test]
@@ -216,7 +222,7 @@ mod tests {
         );
 
         // GLWE
-        let message = vec![3; ggsw_params.glwe_params.N];
+        let message = vec![3; ggsw_params.glwe_params.degree()];
         let glwe_plaintext = GlweCleartext::encode_message(&message, &ggsw_params.glwe_params);
         let glwe_ciphertext = encrypt_glwe_plaintext(
             &ggsw_params.glwe_params,
@@ -253,8 +259,8 @@ mod tests {
         );
 
         // GLWE
-        let message0 = vec![3; ggsw_params.glwe_params.N];
-        let message1 = vec![2; ggsw_params.glwe_params.N];
+        let message0 = vec![3; ggsw_params.glwe_params.degree()];
+        let message1 = vec![2; ggsw_params.glwe_params.degree()];
         let glwe_ciphertext0 = encrypt_glwe_plaintext(
             &ggsw_params.glwe_params,
             &GlweCleartext::encode_message(&message0, &ggsw_params.glwe_params),

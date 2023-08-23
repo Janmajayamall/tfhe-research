@@ -1,11 +1,34 @@
 use std::ops::{AddAssign, Mul, MulAssign};
 
-use itertools::izip;
+use itertools::{izip, Itertools};
 use ndarray::{
     concatenate, Array, Array1, Array2, ArrayView, ArrayView1, ArrayView2, Axis, Dimension, Shape,
     ShapeBuilder,
 };
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng, RngCore};
+
+/// Credit: https://github.com/google/jaxite
+pub fn integer_division(a: u32, divisor: u32) -> u32 {
+    let rational = a / divisor;
+    let fractional = a % divisor;
+
+    return rational + ((fractional + (divisor >> 2)) / divisor);
+}
+
+/// Switches modulus of values from `2^log_from` to `2^log_to`
+/// Let q = 2^log_from and n = 2^log_to, function calculates
+/// round(n(values)/q) (mod n)
+pub fn switch_modulus(values: &[u32], log_from: usize, log_to: usize) -> Vec<u32> {
+    let res = values
+        .iter()
+        .map(|v| {
+            let v = integer_division(*v, (1 << (log_from - log_to)));
+            (v % (1 << log_to)) as u32
+        })
+        .collect_vec();
+
+    res
+}
 
 pub fn sample_gaussian<R: CryptoRng + RngCore>(mean: f64, std_dev: f64, rng: &mut R) -> u32 {
     return 0;
@@ -171,6 +194,12 @@ pub fn school_book_negacylic_mul(p0: ArrayView1<u32>, p1: ArrayView1<u32>) -> Ar
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        glwe,
+        lwe::{encrypt_lwe_plaintext, LweCleartext, LweSecretKey},
+        TfheParams,
+    };
+
     use super::*;
     use ndarray::Array1;
     use rand::thread_rng;
@@ -212,5 +241,26 @@ mod tests {
         let mut rng = thread_rng();
         let f: Array2<u32> = sample_uniform_array(&mut rng, (10, 12));
         dbg!(f);
+    }
+
+    #[test]
+    fn switch_modulus_works() {
+        let mut rng = thread_rng();
+        let lwe_params = TfheParams::default().lwe_params();
+        let glwe_params = TfheParams::default().glwe_params();
+        let lwe_secret_key = LweSecretKey::random(&lwe_params, &mut rng);
+        let lwe_ciphertext = encrypt_lwe_plaintext(
+            &lwe_params,
+            &lwe_secret_key,
+            &LweCleartext::encode_message(3, &lwe_params),
+            &mut rng,
+        );
+        // dbg!(&lwe_ciphertext);
+        let v = switch_modulus(
+            lwe_ciphertext.data.as_slice().unwrap(),
+            lwe_params.log_q,
+            glwe_params.log_degree + 1,
+        );
+        dbg!(v);
     }
 }
