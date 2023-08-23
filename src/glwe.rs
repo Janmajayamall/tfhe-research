@@ -1,5 +1,6 @@
 use crate::{
     decomposer::SignedDecomposer,
+    lwe::LweSecretKey,
     utils::{
         poly_dot_product, sample_binary_array, sample_gaussian, sample_gaussian_array,
         sample_uniform_array,
@@ -8,7 +9,38 @@ use crate::{
 use itertools::{izip, Itertools};
 use ndarray::{concatenate, s, Array1, Array2, ArrayView1, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
+// GLWE operations
+impl AddAssign<&GlweCiphertext> for GlweCiphertext {
+    fn add_assign(&mut self, rhs: &GlweCiphertext) {
+        self.data.add_assign(&rhs.data);
+    }
+}
+
+impl Add<&GlweCiphertext> for GlweCiphertext {
+    type Output = Self;
+    fn add(self, rhs: &GlweCiphertext) -> Self::Output {
+        let mut lhs = self.clone();
+        lhs += rhs;
+        lhs
+    }
+}
+
+impl SubAssign<&GlweCiphertext> for GlweCiphertext {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.data.sub_assign(&rhs.data);
+    }
+}
+
+impl Sub<&GlweCiphertext> for GlweCiphertext {
+    type Output = Self;
+    fn sub(self, rhs: &Self) -> Self::Output {
+        let mut lhs = self.clone();
+        lhs -= rhs;
+        lhs
+    }
+}
 
 /// Decomposes the polynomial into level polynomials by decomposing each coefficient into levels.
 /// Returns a 2d array for levels x degree u32 values with each row contaning one polynomial.
@@ -70,7 +102,7 @@ impl Default for GlweParams {
     fn default() -> Self {
         GlweParams {
             k: 2,
-            N: 8,
+            N: 512,
             /// q in Z/2^qZ
             log_q: 32,
             /// p in Z/2^pZ
@@ -118,7 +150,7 @@ impl GlwePlaintext {
 
 #[derive(Debug, Clone)]
 pub struct GlweSecretKey {
-    data: Array2<u32>,
+    pub(crate) data: Array2<u32>,
 }
 
 impl GlweSecretKey {

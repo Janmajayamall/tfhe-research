@@ -1,17 +1,20 @@
-use crate::utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array};
+use crate::{
+    glwe::GlweSecretKey,
+    utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array},
+};
 use ndarray::{concatenate, s, Array1, Array2, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
 use std::ops::{Add, AddAssign};
 
 #[derive(Debug, Clone)]
 pub struct LweParams {
-    n: usize,
+    pub(crate) n: usize,
     /// q in Z/2^qZ
-    log_q: usize,
+    pub(crate) log_q: usize,
     /// p in Z/2^pZ
-    log_p: usize,
-    mean: f64,
-    std_dev: f64,
+    pub(crate) log_p: usize,
+    pub(crate) mean: f64,
+    pub(crate) std_dev: f64,
 }
 
 impl Default for LweParams {
@@ -29,15 +32,26 @@ impl Default for LweParams {
 #[derive(Debug, Clone)]
 /// Binary secret key
 pub struct LweSecretKey {
-    data: Array1<u32>,
-    params: LweParams,
+    pub(crate) data: Array1<u32>,
 }
 
 impl LweSecretKey {
     pub fn random<R: CryptoRng + RngCore>(lwe_params: &LweParams, rng: &mut R) -> LweSecretKey {
         LweSecretKey {
             data: sample_binary_array(rng, (lwe_params.n)),
-            params: lwe_params.clone(),
+        }
+    }
+}
+
+impl From<&GlweSecretKey> for LweSecretKey {
+    fn from(value: &GlweSecretKey) -> Self {
+        let mut data = vec![];
+        value.data.outer_iter().for_each(|s_i| {
+            data.extend(s_i.iter());
+        });
+
+        LweSecretKey {
+            data: Array1::from_vec(data),
         }
     }
 }
@@ -45,7 +59,7 @@ impl LweSecretKey {
 /// Contains message in clear text (ie without encoding)
 #[derive(Debug, Clone)]
 pub struct LweCleartext {
-    message: u32,
+    pub(crate) message: u32,
 }
 
 impl LweCleartext {
@@ -76,13 +90,16 @@ impl LwePlaintext {
 /// LweCiphertext
 /// data is an array of (a_0, a_1, ..., a_{n-1}, b)
 pub struct LweCiphertext {
-    data: Array1<u32>,
-    params: LweParams,
+    pub(crate) data: Array1<u32>,
 }
 
-pub fn encrypt_lwe_zero<R: CryptoRng + RngCore>(sk: &LweSecretKey, rng: &mut R) -> LweCiphertext {
-    let error = sample_gaussian(sk.params.mean, sk.params.std_dev, rng);
-    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (sk.params.n));
+pub fn encrypt_lwe_zero<R: CryptoRng + RngCore>(
+    lwe_params: &LweParams,
+    sk: &LweSecretKey,
+    rng: &mut R,
+) -> LweCiphertext {
+    let error = sample_gaussian(lwe_params.mean, lwe_params.std_dev, rng);
+    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
 
     let mut a_s = sk.data.dot(&a_samples);
     a_s += error;
@@ -92,17 +109,17 @@ pub fn encrypt_lwe_zero<R: CryptoRng + RngCore>(sk: &LweSecretKey, rng: &mut R) 
 
     LweCiphertext {
         data: Array1::from_vec(data),
-        params: sk.params.clone(),
     }
 }
 
 pub fn encrypt_lwe_plaintext<R: CryptoRng + RngCore>(
+    lwe_params: &LweParams,
     sk: &LweSecretKey,
     lwe_plaintext: &LwePlaintext,
     rng: &mut R,
 ) -> LweCiphertext {
-    let error = sample_gaussian(sk.params.mean, sk.params.std_dev, rng);
-    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (sk.params.n));
+    let error = sample_gaussian(lwe_params.mean, lwe_params.std_dev, rng);
+    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
 
     let mut a_s = sk.data.dot(&a_samples);
     a_s = a_s.wrapping_add(error);
@@ -113,12 +130,10 @@ pub fn encrypt_lwe_plaintext<R: CryptoRng + RngCore>(
 
     LweCiphertext {
         data: Array1::from_vec(data),
-        params: sk.params.clone(),
     }
 }
 
-pub fn decrypt_lwe(sk: &LweSecretKey, ct: &LweCiphertext) -> LwePlaintext {
-    let lwe_params = &sk.params;
+pub fn decrypt_lwe(lwe_params: &LweParams, sk: &LweSecretKey, ct: &LweCiphertext) -> LwePlaintext {
     let a_samples = ct.data.slice(s![..-1]);
 
     // a*s
@@ -143,8 +158,8 @@ mod tests {
         let message = 4;
         let lwe_plaintext = LweCleartext::encode_message(message, &lwe_params);
         let lwe_sk = LweSecretKey::random(&lwe_params, &mut rng);
-        let lwe_ciphertext = encrypt_lwe_plaintext(&lwe_sk, &lwe_plaintext, &mut rng);
-        let lwe_plaintext_back = decrypt_lwe(&lwe_sk, &lwe_ciphertext);
+        let lwe_ciphertext = encrypt_lwe_plaintext(&lwe_params, &lwe_sk, &lwe_plaintext, &mut rng);
+        let lwe_plaintext_back = decrypt_lwe(&lwe_params, &lwe_sk, &lwe_ciphertext);
         let lwe_cleartext_back = lwe_plaintext_back.decode(&lwe_params);
         assert_eq!(message, lwe_cleartext_back.message);
     }

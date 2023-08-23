@@ -106,6 +106,22 @@ where $\beta^{l-{i+1}}$ values are from the first column of $G^T$.
 External product is calculated as: 
 $$ct_{ggsw} \cdot ct_glwe = G^{-1}(ct_{glwe}) (\pi + m_2G^T) = G^{-1}(ct_{glwe})\pi + G^{-1}(ct_{glwe})mG^T = GLWE(0) + GLWE(m_1m_2)$$
 
+
+## Ciphertext Multiplication
+
+You can easily multiply a GLWE ciphertext with a scalar by multiplying polynomial with the scalar. However, multiplications between two ciphertexts is not trivial. This is because internal product over Torus is not defined, you need to use external product. 
+
+Let $x \in \mathbb{Z}$ and $a \in \mathbb{T}$. External product betwen $x$ and $a$ is defined as
+$$x \cdot a = a + a + ... + a \space (x \ times)$$
+
+We cannot port this definition directly to encrypted context. In other words, we can cannot add a given GLWE ciphertext by itself $x$ no. of times, where $x$ itself is unknown. To perform chiphertext multiplication between $x \in \mathbb{Z}_{N}[X]$ and $a \in \mathbb{Z}_{N,q}[X]$ we must first encrypt $a$ under GLWE and $x$ under GGSW. Result of their external product equal to GLSW encryption of $x \cdot a$, that is 
+$$GLWE(x \cdot a) = GGSW(x) \cdot GLWE(a)$$
+
+To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
+$$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$
+
+
+
 ## CMUX
 
 
@@ -120,13 +136,14 @@ $$ b - \sum_{i=0}^{k-1} a_is_i$$
 where $b, a_i, s_i \in \mathbb{Z_{N,q}}$.
 
 Thus value of sample at index $n$ is equal to
-$$m_n =  b_n - \sum_{i=0}^{k-1} \sum_{x=0}^n s_xa_{n-x} - (\sum_{j=n+1}^{N-1}s_ja_{N+n-j})$$
+$$m_n =  b_n - \sum_{i=0}^{k-1} \sum_{x=0}^n s_{(i)x}a_{(i)n-x} - (\sum_{j=n+1}^{N-1}s_{(i)j}a_{(i)N+n-j})$$
 
 Let $sk_{lwe} = [s_0[0], ..., s_0[N-1], ..., s_{k-1}[0], ..., s_{k-1}[N-1]]$. 
 
 To construct LWE sample encrypting $m_n$ under $sk_{lwe}$, set $ct_{lwe} = (b', a')$ where, 
 $b' = b_n$
-$a' = [a_n, a_{n-1}, ..., a_0, -a_{N-1}, -a_{N-2}, ..., -a_{n+1}]$
+$a' = [\sum a_{(i)n},\sum a_{(i)n-1}, ..., \sum a_{(i)0}, \sum -a_{(i)N-1}, -\sum a_{(i)N-2}, ..., \sum -a_{(i)n+1}]$
+
 
 For implementation refer to glw_sample_extraction of tfhe-rs.
 
@@ -314,15 +331,3 @@ TFHE-rs TODO
 2. Replace definitions of base decompositions such that we don't have to assume $\beta l = q$.
 3. 
 
-
-
-
-To encrypt message m we must calculate
-[
-    GLWE(0),
-    .
-    .             +
-    .            
-    .
-    GLWE(0)
-]

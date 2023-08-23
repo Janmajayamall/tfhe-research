@@ -131,6 +131,27 @@ pub fn poly_dot_product(p0: &ArrayView2<u32>, p1: &ArrayView2<u32>) -> Array1<u3
     res
 }
 
+pub fn poly_mul_monomial(
+    p0: ArrayView1<u32>,
+    monomial_term: u32,
+    monomial_index: usize,
+) -> Array1<u32> {
+    let n = p0.shape()[0];
+    assert!(n > monomial_index);
+    let mut pr = vec![0u32; n];
+    let p0 = p0.as_slice().unwrap();
+    for i in 0..n {
+        if monomial_index <= i {
+            let r = p0[i - monomial_index].wrapping_mul(monomial_term);
+            pr[i] = pr[i].wrapping_add(r);
+        } else {
+            let r = p0[n - (monomial_index - i)].wrapping_mul(monomial_term);
+            pr[i] = pr[i].wrapping_sub(r);
+        }
+    }
+    Array1::from_vec(pr)
+}
+
 pub fn school_book_negacylic_mul(p0: ArrayView1<u32>, p1: ArrayView1<u32>) -> Array1<u32> {
     let n = p0.shape()[0];
     let p0 = p0.as_slice().unwrap();
@@ -169,6 +190,21 @@ mod tests {
         let school_book_res = school_book_negacylic_mul(v0.view(), v1.view());
 
         assert_eq!(teoplitz_res, school_book_res);
+    }
+
+    #[test]
+    fn poly_mul_monomial_works() {
+        let monomial_term = 23;
+        let monomial_index = 5;
+        let v0 = Array1::from_vec(vec![12, 4, 123, 43, 3, 2, 3]);
+
+        let mut v1 = Array1::from_vec(vec![0; v0.shape()[0]]);
+        v1.as_slice_mut().unwrap()[monomial_index] = monomial_term;
+
+        let poly_mul_monomial_res = poly_mul_monomial(v0.view(), monomial_term, monomial_index);
+        let school_book_res = school_book_negacylic_mul(v0.view(), v1.view());
+
+        assert_eq!(poly_mul_monomial_res, school_book_res);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::{
     utils::poly_dot_product,
 };
 
-/// Although message must be a polynomial in Z_{N,q}[X] we only require
+/// Although message must be a polynomial in Z_{N}[X] we only require
 /// Ggsw ciphertexts to encrypt bits of LWE secret key for PBS.
 struct GgswPlaintext {
     message: u32,
@@ -37,8 +37,8 @@ impl Default for GgswParams {
 }
 
 struct GgswCiphertext {
-    /// Contains (k+1)l glwe ciphertext. Vector of GLWE ciphertexts must be viewed as a matrix with each row
-    ///  consisting of polynomials forming single GLWE ciphertext.
+    /// Stored as 3D array of u32s. First 2 dimension must be viewed as a matrix with polynomial elements. Each row of the matrix contains a single GLWE ciphertext.
+    /// You can access polynomial at i^th col and j^th row as data[j][i]
     data: Array3<u32>,
 }
 
@@ -162,6 +162,23 @@ fn external_product(
     }
 }
 
+/// CMUX gate that either returns `glwe_ciphertext0` or `glwe_ciphertext1` depending on whether `ggsw_ciphertext` is encryption of 0 or 1, respecitvely.
+fn cmux(
+    ggsw_params: &GgswParams,
+    ggsw_ciphertext: &GgswCiphertext,
+    glwe_ciphertext0: &GlweCiphertext,
+    glwe_ciphertext1: &mut GlweCiphertext,
+) -> GlweCiphertext {
+    // c1 - c0
+    *glwe_ciphertext1 -= glwe_ciphertext0;
+
+    // b(c1-c0) + c0
+    let mut res = external_product(ggsw_params, ggsw_ciphertext, &glwe_ciphertext1);
+    res += glwe_ciphertext0;
+
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use rand::thread_rng;
@@ -216,6 +233,50 @@ mod tests {
             &res_ciphertext,
             &mut rng,
         );
+        let res_message = res_plaintext.decode(&ggsw_params.glwe_params);
+        dbg!(res_message);
+    }
+
+    #[test]
+    fn cmux_works() {
+        let mut rng = thread_rng();
+
+        // GGSW
+        let ggsw_params = GgswParams::default();
+        let glwe_sk = GlweSecretKey::random(&ggsw_params.glwe_params, &mut rng);
+        // encrypt indicator bit
+        let ggsw_ciphertext = encrypt_ggsw_plaintext(
+            &GgswPlaintext { message: 1 },
+            &glwe_sk,
+            &ggsw_params,
+            &mut rng,
+        );
+
+        // GLWE
+        let message0 = vec![3; ggsw_params.glwe_params.N];
+        let message1 = vec![2; ggsw_params.glwe_params.N];
+        let glwe_ciphertext0 = encrypt_glwe_plaintext(
+            &ggsw_params.glwe_params,
+            &GlweCleartext::encode_message(&message0, &ggsw_params.glwe_params),
+            &glwe_sk,
+            &mut rng,
+        );
+        let mut glwe_ciphertext1 = encrypt_glwe_plaintext(
+            &ggsw_params.glwe_params,
+            &GlweCleartext::encode_message(&message1, &ggsw_params.glwe_params),
+            &glwe_sk,
+            &mut rng,
+        );
+
+        let res = cmux(
+            &ggsw_params,
+            &ggsw_ciphertext,
+            &glwe_ciphertext0,
+            &mut glwe_ciphertext1,
+        );
+
+        let res_plaintext =
+            decrypt_glwe_ciphertext(&ggsw_params.glwe_params, &glwe_sk, &res, &mut rng);
         let res_message = res_plaintext.decode(&ggsw_params.glwe_params);
         dbg!(res_message);
     }
