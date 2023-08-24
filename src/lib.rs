@@ -13,6 +13,7 @@ mod bootstrapping;
 mod decomposer;
 mod ggsw;
 mod glwe;
+mod key_switching;
 mod lwe;
 mod ops;
 mod test_vector;
@@ -78,7 +79,7 @@ impl Default for TfheParams {
         TfheParams {
             k: 1,
             log_degree: 9,
-            n: 2,
+            n: 4,
             log_p: 2,
             log_q: 32,
             decomposer: DecomposerParams {

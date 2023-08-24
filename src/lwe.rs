@@ -59,7 +59,7 @@ impl From<&GlweSecretKey> for LweSecretKey {
 }
 
 /// Contains message in clear text (ie without encoding)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LweCleartext {
     pub(crate) message: u32,
 }
@@ -71,6 +71,10 @@ impl LweCleartext {
         LwePlaintext {
             data: m << (lwe_params.log_q - (lwe_params.log_p + lwe_params.padding_bits)),
         }
+    }
+
+    pub fn encode(&self, lwe_params: &LweParams) -> LwePlaintext {
+        LweCleartext::encode_message(self.message, lwe_params)
     }
 }
 

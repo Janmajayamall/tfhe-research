@@ -1,9 +1,11 @@
 use crate::{
+    decomposer::SignedDecomposer,
     ggsw::{cmux, encrypt_ggsw_plaintext, GgswCiphertext, GgswParams, GgswPlaintext},
     glwe::{
         decrypt_glwe_ciphertext, trivial_encrypt_glwe_plaintext, GlweCiphertext, GlweCleartext,
         GlweParams, GlwePlaintext, GlweSecretKey, Monomial,
     },
+    key_switching::{key_switch_lwe, KeySwitchingKey},
     lwe::{LweCiphertext, LweParams, LweSecretKey},
     utils::{poly_mul_monomial, poly_mul_monomial_custom_mod, switch_modulus},
     TfheParams,
@@ -15,14 +17,17 @@ use std::ops::{Add, AddAssign};
 
 struct BootstrappingKey {
     lwe_sk_ggsw_enc: Vec<GgswCiphertext>,
+    ksk: KeySwitchingKey,
 }
 
 fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
+    tfhe_params: &TfheParams,
     lwe_secret_key: &LweSecretKey,
     glwe_secret_key: &GlweSecretKey,
-    ggsw_params: &GgswParams,
     rng: &mut R,
 ) -> BootstrappingKey {
+    let ggsw_params = tfhe_params.ggsw_params();
+
     // encrypt each bit of lwe secret key
     let lwe_sk_ggsw_enc = lwe_secret_key
         .data
@@ -32,14 +37,23 @@ fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
         })
         .collect_vec();
 
-    BootstrappingKey { lwe_sk_ggsw_enc }
-}
+    let signed_decomposer = SignedDecomposer::new(tfhe_params.decomposer.clone());
 
-fn monomial_index_and_term(v: usize, degree: usize) -> (u32, usize) {
-    if v >= degree {
-        ((u32::MAX - 1) as u32, v as usize % degree)
-    } else {
-        (1, v as usize)
+    // Generate key switching key from GLWE to LWE
+    let glwe_as_lwe_sk = LweSecretKey::from(glwe_secret_key);
+    let lwe_params_post_pbs = tfhe_params.lwe_params_post_pbs();
+    let lwe_params = tfhe_params.lwe_params();
+    let ksk = KeySwitchingKey::generate_ksk(
+        &glwe_as_lwe_sk,
+        lwe_secret_key,
+        &lwe_params_post_pbs,
+        &lwe_params,
+        &signed_decomposer,
+        rng,
+    );
+    BootstrappingKey {
+        lwe_sk_ggsw_enc,
+        ksk,
     }
 }
 
@@ -94,7 +108,19 @@ fn bootstrap(
 
     // extract the constant term in acc GLWE ciphertext
     let bootstrapped_lwe = sample_extract(&acc, &glwe_params, 0);
-    bootstrapped_lwe
+
+    let signed_decomposer = SignedDecomposer::new(tfhe_params.decomposer.clone());
+
+    // key switch bootstrapped LWE
+    let key_switched_lwe = key_switch_lwe(
+        &bootstrapped_lwe,
+        &tfhe_params.lwe_params_post_pbs(),
+        &tfhe_params.lwe_params(),
+        &signed_decomposer,
+        &bootstrapping_key.ksk,
+    );
+
+    key_switched_lwe
 }
 
 fn sample_extract(
@@ -137,7 +163,6 @@ fn sample_extract(
 mod tests {
     use super::*;
     use crate::{
-        decomposer::{DecomposerParams, SignedDecomposer},
         glwe::{
             decompose_glwe_ciphertext, encrypt_glwe_plaintext, encrypt_glwe_zero, GlweCleartext,
             GlweSecretKey,
@@ -170,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn bootstrapping_without_key_switch_works() {
+    fn bootstrapping_works() {
         let mut rng = thread_rng();
 
         let tfhe_params = TfheParams::default();
@@ -181,12 +206,12 @@ mod tests {
         let glwe_params = tfhe_params.glwe_params();
         let glwe_secret_key = GlweSecretKey::random(&glwe_params, &mut rng);
 
-        let ggsw_params = tfhe_params.ggsw_params();
         let bootstrapping_key =
-            bootstrapping_key_gen(&lwe_secret_key, &glwe_secret_key, &ggsw_params, &mut rng);
+            bootstrapping_key_gen(&tfhe_params, &lwe_secret_key, &glwe_secret_key, &mut rng);
 
         // encrypt LWE
-        let lwe_plaintext = LweCleartext::encode_message(2, &lwe_params);
+        let lwe_cleartext = LweCleartext { message: 1 };
+        let lwe_plaintext = lwe_cleartext.encode(&lwe_params);
         let lwe_ciphertext =
             encrypt_lwe_plaintext(&lwe_params, &lwe_secret_key, &lwe_plaintext, &mut rng);
 
@@ -201,19 +226,11 @@ mod tests {
             test_vector_poly,
         );
 
-        // dbg!(&bootstrapped_lwe_ct);
+        let lwe_plaintext_post_pbs =
+            decrypt_lwe(&lwe_params, &lwe_secret_key, &bootstrapped_lwe_ct);
+        let lwe_cleartext_post_pbs = lwe_plaintext_post_pbs.decode(&lwe_params);
 
-        // LWE post PBS (without key switch)
-        let lwe_params_post_pbs = tfhe_params.lwe_params_post_pbs();
-        let lwe_secret_post_pbs = LweSecretKey::from(&glwe_secret_key);
-        let lwe_plaintext_post_pbs = decrypt_lwe(
-            &lwe_params_post_pbs,
-            &lwe_secret_post_pbs,
-            &bootstrapped_lwe_ct,
-        );
-        // dbg!(&lwe_plaintext_post_pbs);
-        let lwe_cleartext_post_pbs = lwe_plaintext_post_pbs.decode(&lwe_params_post_pbs);
-        dbg!(lwe_cleartext_post_pbs);
+        assert_eq!(lwe_cleartext, lwe_cleartext_post_pbs);
     }
 
     #[test]
