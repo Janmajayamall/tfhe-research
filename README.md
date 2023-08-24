@@ -9,4 +9,4 @@ If you ever wondered how to have fully homormoprhic arithmetic & relation operat
 > [!WARNING]
 > This is very much a work in progress. Implementation in this repository isn't perfect and I enourage you to open PRs. If you find a something not typical please feel free to discuss.
 
-If you want to learn together and contribute, please do! Feel free to create new discussions and join this telegram group chat.
+If you want to learn together and contribute, please do! Feel free to create new discussions and join this [telegram group chat](https://t.me/+rDHqU-Py34s4N2M1).
