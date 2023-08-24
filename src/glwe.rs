@@ -2,14 +2,35 @@ use crate::{
     decomposer::SignedDecomposer,
     lwe::LweSecretKey,
     utils::{
-        poly_dot_product, sample_binary_array, sample_gaussian, sample_gaussian_array,
-        sample_uniform_array,
+        poly_dot_product, poly_mul_monomial, sample_binary_array, sample_gaussian,
+        sample_gaussian_array, sample_uniform_array,
     },
 };
 use itertools::{izip, Itertools};
 use ndarray::{concatenate, s, Array, Array1, Array2, ArrayView1, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+
+/// Monomial such X^{index}
+pub struct Monomial {
+    pub(crate) index: isize,
+}
+
+impl Mul<&Monomial> for &GlweCiphertext {
+    type Output = GlweCiphertext;
+    fn mul(self, rhs: &Monomial) -> Self::Output {
+        let mut out = Array2::zeros((self.data.shape()[0], self.data.shape()[1]));
+        izip!(out.outer_iter_mut(), self.data.outer_iter()).for_each(|(mut p_out, p_data)| {
+            let res = poly_mul_monomial(p_data.view(), rhs.index);
+            p_out
+                .as_slice_mut()
+                .unwrap()
+                .copy_from_slice(res.as_slice().unwrap());
+        });
+
+        GlweCiphertext { data: out }
+    }
+}
 
 // GLWE operations
 impl AddAssign<&GlweCiphertext> for GlweCiphertext {
@@ -295,5 +316,10 @@ mod tests {
         let decomposed_glwe_ciphertext =
             decompose_glwe_ciphertext(&glwe_ciphertext, &signed_decomposer);
         dbg!(decomposed_glwe_ciphertext);
+    }
+
+    #[test]
+    fn glwe_monomial_mul_works() {
+        // TODO: this will require implementation of poly_monomial with non-native (modulus 1<<log_p to be exact) modulus to check correctness. Delaying this for now.
     }
 }

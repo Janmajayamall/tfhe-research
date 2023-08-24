@@ -83,7 +83,8 @@ pub struct LwePlaintext {
 impl LwePlaintext {
     pub fn decode(&self, lwe_params: &LweParams) -> LweCleartext {
         LweCleartext {
-            message: self.data >> (lwe_params.log_q - (lwe_params.log_p + lwe_params.padding_bits)),
+            message: (self.data
+                >> (lwe_params.log_q - (lwe_params.log_p + lwe_params.padding_bits))), // & ((1 << lwe_params.log_p) - 1),
         }
     }
 }
@@ -150,18 +151,21 @@ pub fn decrypt_lwe(lwe_params: &LweParams, sk: &LweSecretKey, ct: &LweCiphertext
 
 #[cfg(test)]
 mod tests {
+    use crate::TfheParams;
+
     use super::*;
     use rand::thread_rng;
 
     #[test]
     fn encrypt_and_decrypt_lwe() {
         let mut rng = thread_rng();
-        let lwe_params = LweParams::default();
-        let message = 4;
+        let lwe_params = TfheParams::default().lwe_params();
+        let message = 3;
         let lwe_plaintext = LweCleartext::encode_message(message, &lwe_params);
         let lwe_sk = LweSecretKey::random(&lwe_params, &mut rng);
         let lwe_ciphertext = encrypt_lwe_plaintext(&lwe_params, &lwe_sk, &lwe_plaintext, &mut rng);
         let lwe_plaintext_back = decrypt_lwe(&lwe_params, &lwe_sk, &lwe_ciphertext);
+        dbg!(&lwe_plaintext);
         let lwe_cleartext_back = lwe_plaintext_back.decode(&lwe_params);
         assert_eq!(message, lwe_cleartext_back.message);
     }

@@ -76,10 +76,10 @@ impl TfheParams {
 impl Default for TfheParams {
     fn default() -> Self {
         TfheParams {
-            k: 2,
+            k: 1,
             log_degree: 9,
-            n: 512,
-            log_p: 8,
+            n: 2,
+            log_p: 2,
             log_q: 32,
             decomposer: DecomposerParams {
                 log_base: 4,

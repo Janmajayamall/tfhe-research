@@ -159,25 +159,29 @@ $$X^{-\mu} \cdot v(x)$$
 to get $\mu^{th}$ coefficient of v(x) as constant term (ie rotate v left by $\mu$ positions).
 
 But notice that
-1. $X \in Z_{N,q}[X]$, thus $X$ is of order $2N$ in $Z_{N,q}[X]$ ($X^{2N}=1$). This implies instead of $\mu$, $-\hat\mu$ must be calculated as: 
+1. $X \in Z_{N,q}[X]$, thus $X$ is of order $2N$ in $Z_{N,q}[X]$ (ie $X^{2N}=1$). This implies instead of $\mu$, $-\hat\mu$ must be calculated as: 
    $$-\hat{b} + \sum{\hat{a_i}s_i} \mod 2N$$which is mod 2N instead of mod q, where $\hat{b}$ and $\hat{a_i}$ are approximate values in mod 2N calculated as
    $$\hat{b} = round(\frac{2N \cdot b}{q}) \mod 2N$$
    and 
    $$\hat{a_i} = round(\frac{2N \cdot a_i}{q}) \mod 2N$$
    Note that error induced by approximation is called *drift*. It can be reduced by choosing appropriate parameters.
-2. Another problem is that since $v(x)$ can have only $N$ coefficients we can only map $N$ values for $\hat\mu$ in $v(x)$. Thus we need to make sure that $\hat\mu$ cannot have magnitude greater that $N$. In practice we achieve this by having greater than or equal to 1 carry bit, so that plaintext value (noiseless $\mu$) is limited to $q/2$.
-3. Another thing to notice that that $\hat\mu$ consists of noise. This implies a range of values (think of torus) will map to respective noiseless value of $\mu$. With this we can view $N$ coefficients of test polynomial as a torus divided in blocks, where all possible $\hat\mu$ values within a block must map to same noiseless value of $\mu$. However, due to noise, $\hat\mu$, if it belongs to block corresponding to 0, can be negative, thus leaking half of the block for 0 to higher coefficients and wrapping around. To counter this, half of the block for 0 must encoded in higher coefficients (ie at the end) and must be negated to adhere to negacyclic property of polynomials (ie wrapping around negates coefficients).
+2. Another problem is that since $v(x)$ can have only $N$ coefficients we can only map $N$ encode $N$ values in $v(x)$. This requires us to limit magnitude of $-\hat\mu$ to $N$ values. This can be achieved limiting $\mu = b + \sum a_is_i$ (decryption with noise) to $q/2$. In practice we this translates to setting carry bit greater than or equal to 1, so that noise less encoded plaintext can have a maximum value $q/2$.
+3. Another thing to notice is that that $-\hat\mu$ consists of noise (it is decryption without rounding). Recall that in decryption procedure, a range values will map to same message and to obtain the message from decrypted plaintext we need to round it (Imagine the torus). Similarly, when encoding coefficients in $v(x)$ we encode the same plaintext over a range of coefficients. This ensures that rotation by $-\hat\mu$ (which contains errors) maps to correct encoded plaintext coefficient. 
+4. Following from (3), recall that $\mu$, thus $\hat\mu$,can be negative as well. This becomes a problem for values at the border (ie values corresponding to 0). Imagining the torus again and recall that negative values upto error range beyond 0, must round back to 0. We need to assure that the same is handled in $v(x)$. If  $\hat\mu$ is negative it will rotate $v(x)$ by right. To make sure that value corresponding to 0 land in coefficient of $v(x)$ we need to encode some of higher coefficients with value corresponding to 0. Moreover, since rotation towards right wraps higher coefficients around, thus negating them ($v(x)$ is negacylic) we need to negate the values encoded in higher coefficients. This assures that upon wrapping around, we get correct positive values in $v(x)$'s constant term. 
+   
 
 In practice test polynomial is constructed as (we view polynomial with coefficient vector): 
 1. Construct vector $m$ consisting of all possible values in message space $[0, 2^M)$, as:
    $$[0,..,2^M-1]$$
-2. Divide N into $b$ blocks where $b = N/(2^M)$ and fill each block with repeated values of values in $m$ (this corresponds to mapping same noiseless $\mu$ value for different $\hat\mu$). 
+2. Divide N into $b$ blocks where $b = N/(2^M)$ and fill each block with repeated values of values in $m$ (this corresponds to mapping same noiseless values over the error range). 
    $$[0,0,0,0,1,1,1,1,...,2^M-1]$$ where $b = 4$.
 3. Slice half of block corresponding to 0, negate its values and append it at the end. 
-4. Encode the resulting coefficient as a plaintext, since we view them as a valid LWE ciphertext. This means multiply each value by $\Delta$.
+4. Encode the resulting coefficient as a plaintext, since we view them as a valid GLWE ciphertext. This means multiply each value by $\Delta$.
 
-Note that replacing vector $m$ with an output of a function, turns the bootstrapping into functional bootstrapping. That is for function $f(x) | x \in [0, 2^M)$, construct $m$ as
+Note that replacing vector $m$ with an output of a function, turns bootstrapping into programmable bootstrapping (PBS). That is for function $f(x) | x \in [0, 2^M)$, construct $m$ as
 $$m = [f(0), f(1), ..., f(2^M-1)]$$
+
+It is worth noting that boostrapping is PBS with identity function. 
 
 ## Blind rotation
 

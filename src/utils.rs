@@ -12,7 +12,7 @@ pub fn integer_division(a: u32, divisor: u32) -> u32 {
     let rational = a / divisor;
     let fractional = a % divisor;
 
-    return rational + ((fractional + (divisor >> 2)) / divisor);
+    return rational + ((fractional + (divisor >> 1)) / divisor);
 }
 
 /// Switches modulus of values from `2^log_from` to `2^log_to`
@@ -154,25 +154,50 @@ pub fn poly_dot_product(p0: &ArrayView2<u32>, p1: &ArrayView2<u32>) -> Array1<u3
     res
 }
 
-pub fn poly_mul_monomial(
-    p0: ArrayView1<u32>,
-    monomial_term: u32,
-    monomial_index: usize,
-) -> Array1<u32> {
+/// Multiplies polynomial p0 with monomial of form X^{monomial_index}.
+///
+/// Notic that powers of polynomial \in Z_{n}[X] form a group of order 2n. Thus monomial_index is
+/// first reduced by % 2n. Since polynomial is negacyclic, coefficients of power corresponding to
+/// >= n wrap around and negate. Thus if degree = (monomial_index % 2n) is greater than or equal to
+/// n, then we must view monomial X^{monomial_index} as `-X^{degree}`, otherwise X^{degree}.
+///
+/// Credit: https://github.com/google/jaxite
+pub fn poly_mul_monomial(p0: ArrayView1<u32>, monomial_index: isize) -> Array1<u32> {
     let n = p0.shape()[0];
-    assert!(n > monomial_index);
-    let mut pr = vec![0u32; n];
-    let p0 = p0.as_slice().unwrap();
-    for i in 0..n {
-        if monomial_index <= i {
-            let r = p0[i - monomial_index].wrapping_mul(monomial_term);
-            pr[i] = pr[i].wrapping_add(r);
-        } else {
-            let r = p0[n - (monomial_index - i)].wrapping_mul(monomial_term);
-            pr[i] = pr[i].wrapping_sub(r);
-        }
+
+    let monomial_index = monomial_index as usize % (2 * n);
+
+    // indicates wherher monomial wraps around
+    let flip_sign = monomial_index / n;
+    let degree = monomial_index % n;
+
+    // negate p0 if monomial wraps around
+    let mut p0 = p0
+        .iter()
+        .map(|v| v * ((u32::MAX).pow(flip_sign as u32)))
+        .collect_vec();
+
+    // multiplicartion by x^{degree} shift polynomial right by degree.
+    p0.rotate_right(degree);
+
+    // elements that wrap around must be negated due to negacylic property
+    for i in 0..degree {
+        p0[i] = p0[i].wrapping_neg();
     }
-    Array1::from_vec(pr)
+
+    Array1::from_vec(p0)
+}
+
+pub fn poly_mul_monomial_custom_mod(
+    p0: ArrayView1<u32>,
+    monomial_index: isize,
+    log_modulus: usize,
+) -> Array1<u32> {
+    let mut res = poly_mul_monomial(p0, monomial_index);
+    if log_modulus < 32 {
+        res.iter_mut().for_each(|v| *v = *v % (1 << log_modulus));
+    }
+    res
 }
 
 pub fn school_book_negacylic_mul(p0: ArrayView1<u32>, p1: ArrayView1<u32>) -> Array1<u32> {
@@ -197,12 +222,12 @@ mod tests {
     use crate::{
         glwe,
         lwe::{encrypt_lwe_plaintext, LweCleartext, LweSecretKey},
-        TfheParams,
+        test_vector, TfheParams,
     };
 
     use super::*;
     use ndarray::Array1;
-    use rand::thread_rng;
+    use rand::{distributions::Uniform, thread_rng};
 
     #[test]
     fn teoplitz_works() {
@@ -223,15 +248,33 @@ mod tests {
 
     #[test]
     fn poly_mul_monomial_works() {
-        let monomial_term = 23;
-        let monomial_index = 5;
-        let v0 = Array1::from_vec(vec![12, 4, 123, 43, 3, 2, 3]);
+        let rng = thread_rng();
+        let monomial_index = 2;
+        let n = 3;
+        let v0 = Array1::from_vec(
+            rng.sample_iter(Uniform::new(0, u32::MAX))
+                .take(n)
+                .collect_vec(),
+        );
+        // let v0 = Array1::from_vec(vec![1, 2, 3]);
 
-        let mut v1 = Array1::from_vec(vec![0; v0.shape()[0]]);
-        v1.as_slice_mut().unwrap()[monomial_index] = monomial_term;
+        // Note: we assume log_modulus to be 32 since `school_book_negacylic_mul` uses u32
+        let poly_mul_monomial_res = poly_mul_monomial(v0.view(), monomial_index);
 
-        let poly_mul_monomial_res = poly_mul_monomial(v0.view(), monomial_term, monomial_index);
-        let school_book_res = school_book_negacylic_mul(v0.view(), v1.view());
+        let monomial_index = (monomial_index % (2 * n) as isize) as usize;
+        let index = monomial_index % n;
+        let mut term = (monomial_index / n) as u32;
+        if term == 1 {
+            // -1
+            term = u32::MAX;
+        } else {
+            term = 1;
+        }
+        let mut monomial_as_poly = vec![0; n];
+        monomial_as_poly[index] = term;
+
+        let school_book_res =
+            school_book_negacylic_mul(v0.view(), Array1::from_vec(monomial_as_poly).view());
 
         assert_eq!(poly_mul_monomial_res, school_book_res);
     }
