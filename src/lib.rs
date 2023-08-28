@@ -7,7 +7,7 @@ use lwe::LweParams;
 use ndarray::{concatenate, s, Array1, Array2, Axis};
 use ops::dot_product;
 use rand::{thread_rng, CryptoRng, RngCore};
-use utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array};
+use utils::{poly_dot_product, sample_binary_array, sample_uniform_array};
 
 mod boolean;
 mod bootstrapping;
@@ -76,11 +76,29 @@ impl TfheParams {
 }
 
 impl Default for TfheParams {
+    // fn default() -> Self {
+    //     TfheParams {
+    //         k: 1,
+    //         log_degree: 9,
+    //         n: 4,
+    //         log_p: 2,
+    //         log_q: 32,
+    //         decomposer: DecomposerParams {
+    //             log_base: 4,
+    //             levels: 8,
+    //             log_q: 32,
+    //         },
+    //         mean: 0.0,
+    //         std_dev: 0.0,
+    //         padding_bits: 1,
+    //     }
+    // }
+
     fn default() -> Self {
         TfheParams {
             k: 1,
             log_degree: 9,
-            n: 4,
+            n: 722,
             log_p: 2,
             log_q: 32,
             decomposer: DecomposerParams {
@@ -89,7 +107,7 @@ impl Default for TfheParams {
                 log_q: 32,
             },
             mean: 0.0,
-            std_dev: 0.0,
+            std_dev: 0.000013071021089943935,
             padding_bits: 1,
         }
     }

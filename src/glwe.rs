@@ -2,8 +2,8 @@ use crate::{
     decomposer::SignedDecomposer,
     lwe::LweSecretKey,
     utils::{
-        poly_dot_product, poly_mul_monomial, sample_binary_array, sample_gaussian,
-        sample_gaussian_array, sample_uniform_array,
+        poly_dot_product, poly_mul_monomial, sample_binary_array, sample_gaussian_array,
+        sample_uniform_array,
     },
 };
 use itertools::{izip, Itertools};

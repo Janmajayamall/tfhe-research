@@ -1,6 +1,6 @@
 use crate::{
     glwe::GlweSecretKey,
-    utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array},
+    utils::{poly_dot_product, sample_binary_array, sample_gaussian_slice, sample_uniform_array},
 };
 use ndarray::{concatenate, s, Array1, Array2, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
@@ -121,7 +121,9 @@ pub fn encrypt_lwe_zero<R: CryptoRng + RngCore>(
     sk: &LweSecretKey,
     rng: &mut R,
 ) -> LweCiphertext {
-    let error = sample_gaussian(lwe_params.mean, lwe_params.std_dev, rng);
+    let error = *sample_gaussian_slice(lwe_params.mean, lwe_params.std_dev, 1, rng)
+        .first()
+        .unwrap();
     let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
 
     let mut a_s = sk.data.dot(&a_samples);
@@ -141,7 +143,10 @@ pub fn encrypt_lwe_plaintext<R: CryptoRng + RngCore>(
     lwe_plaintext: &LwePlaintext,
     rng: &mut R,
 ) -> LweCiphertext {
-    let error = sample_gaussian(lwe_params.mean, lwe_params.std_dev, rng);
+    let error = *sample_gaussian_slice(lwe_params.mean, lwe_params.std_dev, 1, rng)
+        .first()
+        .unwrap();
+
     let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
 
     let mut a_s = sk.data.dot(&a_samples);

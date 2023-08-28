@@ -1,11 +1,11 @@
-use std::ops::{AddAssign, Mul, MulAssign};
-
 use itertools::{izip, Itertools};
 use ndarray::{
     concatenate, Array, Array1, Array2, ArrayView, ArrayView1, ArrayView2, Axis, Dimension, Shape,
     ShapeBuilder,
 };
 use rand::{distributions::Standard, prelude::Distribution, thread_rng, CryptoRng, Rng, RngCore};
+use rand_distr::Normal;
+use std::ops::{AddAssign, Mul, MulAssign};
 
 use crate::{glwe::GlweSecretKey, lwe::LweSecretKey, TfheParams};
 
@@ -32,8 +32,26 @@ pub fn switch_modulus(values: &[u32], log_from: usize, log_to: usize) -> Vec<u32
     res
 }
 
-pub fn sample_gaussian<R: CryptoRng + RngCore>(mean: f64, std_dev: f64, rng: &mut R) -> u32 {
-    return 0;
+/// Converts f64 to torus and then converts torus to its unsigned representation in Z_q with q = 2^32.
+pub fn f64_to_torus_unsigned_representation(v: f64) -> u32 {
+    let mut frac = v - v.round();
+    frac *= 2f64.powi(32);
+    frac = frac.round();
+    frac as u32
+}
+
+pub fn sample_gaussian_slice<R: CryptoRng + RngCore>(
+    mean: f64,
+    std_dev: f64,
+    size: usize,
+    rng: &mut R,
+) -> Vec<u32> {
+    let normal = Normal::new(mean, std_dev).unwrap();
+    normal
+        .sample_iter(rng)
+        .take(size)
+        .map(|v| f64_to_torus_unsigned_representation(v))
+        .collect_vec()
 }
 
 pub fn sample_gaussian_array<S: ShapeBuilder, R: CryptoRng + RngCore>(
@@ -44,9 +62,8 @@ pub fn sample_gaussian_array<S: ShapeBuilder, R: CryptoRng + RngCore>(
 ) -> Array<u32, S::Dim> {
     let mut res = Array::zeros(shape);
     let fill = res.as_slice_mut().unwrap();
-    fill.iter_mut().for_each(|v| {
-        *v = sample_gaussian(mean, std_dev, rng);
-    });
+    let size = fill.len();
+    fill.copy_from_slice(sample_gaussian_slice(mean, std_dev, size, rng).as_slice());
     res
 }
 
@@ -121,6 +138,7 @@ pub fn teoplitz(p: ArrayView1<u32>) -> Array2<u32> {
     //     2  1  0 -4 -3
     //     3  2  1  0 -4
     //     4  3  2  1  0
+    // ]
 
     let n = p.shape()[0];
     let original = p.as_slice().unwrap();
@@ -313,6 +331,13 @@ mod tests {
             lwe_params.log_q,
             glwe_params.log_degree + 1,
         );
+        dbg!(v);
+    }
+
+    #[test]
+    fn test() {
+        let mut rng = thread_rng();
+        let v = sample_gaussian_slice(0.0, 0.0, 10, &mut rng);
         dbg!(v);
     }
 }
