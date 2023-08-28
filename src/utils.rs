@@ -5,7 +5,9 @@ use ndarray::{
     concatenate, Array, Array1, Array2, ArrayView, ArrayView1, ArrayView2, Axis, Dimension, Shape,
     ShapeBuilder,
 };
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng, RngCore};
+use rand::{distributions::Standard, prelude::Distribution, thread_rng, CryptoRng, Rng, RngCore};
+
+use crate::{glwe::GlweSecretKey, lwe::LweSecretKey, TfheParams};
 
 /// Credit: https://github.com/google/jaxite
 pub fn integer_division(a: u32, divisor: u32) -> u32 {
@@ -215,6 +217,13 @@ pub fn school_book_negacylic_mul(p0: ArrayView1<u32>, p1: ArrayView1<u32>) -> Ar
     }
 
     Array1::from_vec(res)
+}
+
+pub fn random_keys(tfhe_params: &TfheParams) -> (LweSecretKey, GlweSecretKey) {
+    let mut rng = thread_rng();
+    let lwe_sk = LweSecretKey::random(&tfhe_params.lwe_params(), &mut rng);
+    let glwe_sk = GlweSecretKey::random(&tfhe_params.glwe_params(), &mut rng);
+    (lwe_sk, glwe_sk)
 }
 
 #[cfg(test)]

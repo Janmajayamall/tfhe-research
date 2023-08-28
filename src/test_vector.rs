@@ -2,14 +2,15 @@ use ndarray::Array1;
 
 use crate::{glwe::GlweParams, lwe::LweParams, TfheParams};
 
-pub fn construct_test_vector(tfhe_params: &TfheParams) -> Array1<u32> {
+pub fn construct_test_vector(tfhe_params: &TfheParams, f: fn(u32, u32) -> u32) -> Array1<u32> {
     let plaintext_modulus = 1u32 << tfhe_params.log_p;
 
     // iterate over possible inputs
     // For now we limit to identity function
     let mut lookup_table = vec![];
     for i in 0..plaintext_modulus {
-        lookup_table.push(i);
+        // extracts 0^th and 1^st bit as inputs to right and left gate
+        lookup_table.push(f((i >> 1) & 1, i & 1));
     }
 
     // construct test vector
@@ -47,7 +48,7 @@ mod tests {
     #[test]
     fn test_vector_works() {
         let tfhe_params = TfheParams::default();
-        let test_vector = construct_test_vector(&tfhe_params);
+        let test_vector = construct_test_vector(&tfhe_params, |lhs, rhs| lhs & rhs);
         dbg!(test_vector);
     }
 }

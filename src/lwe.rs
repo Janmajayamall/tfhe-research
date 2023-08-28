@@ -4,7 +4,23 @@ use crate::{
 };
 use ndarray::{concatenate, s, Array1, Array2, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Mul};
+
+impl Add<&LweCiphertext> for &LweCiphertext {
+    type Output = LweCiphertext;
+    fn add(self, rhs: &LweCiphertext) -> Self::Output {
+        let data = &self.data + &rhs.data;
+        LweCiphertext { data }
+    }
+}
+
+impl Mul<u32> for &LweCiphertext {
+    type Output = LweCiphertext;
+    fn mul(self, rhs: u32) -> Self::Output {
+        let data = &self.data * rhs;
+        LweCiphertext { data }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LweParams {

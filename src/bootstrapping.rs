@@ -15,12 +15,12 @@ use ndarray::{concatenate, s, Array1, Axis};
 use rand::{thread_rng, CryptoRng, RngCore};
 use std::ops::{Add, AddAssign};
 
-struct BootstrappingKey {
+pub struct BootstrappingKey {
     lwe_sk_ggsw_enc: Vec<GgswCiphertext>,
     ksk: KeySwitchingKey,
 }
 
-fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
+pub fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
     tfhe_params: &TfheParams,
     lwe_secret_key: &LweSecretKey,
     glwe_secret_key: &GlweSecretKey,
@@ -57,13 +57,13 @@ fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
     }
 }
 
-fn bootstrap(
+pub fn bootstrap(
     tfhe_params: &TfheParams,
     lwe_ciphertext: &LweCiphertext,
     lwe_secret_key: &LweSecretKey,
     glwe_secret_key: &GlweSecretKey,
     bootstrapping_key: &BootstrappingKey,
-    test_vector_poly: Array1<u32>,
+    test_vector_poly: &Array1<u32>,
 ) -> LweCiphertext {
     // switch modulus of LWE from q to 2N
     let approximate_lwe = switch_modulus(
@@ -215,7 +215,7 @@ mod tests {
         let lwe_ciphertext =
             encrypt_lwe_plaintext(&lwe_params, &lwe_secret_key, &lwe_plaintext, &mut rng);
 
-        let test_vector_poly = construct_test_vector(&tfhe_params);
+        let test_vector_poly = construct_test_vector(&tfhe_params, |lhs, rhs| lhs & rhs);
 
         let bootstrapped_lwe_ct = bootstrap(
             &tfhe_params,
@@ -223,7 +223,7 @@ mod tests {
             &lwe_secret_key,
             &glwe_secret_key,
             &bootstrapping_key,
-            test_vector_poly,
+            &test_vector_poly,
         );
 
         let lwe_plaintext_post_pbs =
@@ -246,7 +246,7 @@ mod tests {
         let lwe_ciphertext =
             encrypt_lwe_plaintext(&lwe_params, &lwe_secret_key, &lwe_plaintext, &mut rng);
 
-        let test_vector_poly = construct_test_vector(&tfhe_params);
+        let test_vector_poly = construct_test_vector(&tfhe_params, |lhs, rhs| lhs & rhs);
         let test_vector_poly = GlweCleartext::encode_message(
             test_vector_poly.as_slice().unwrap(),
             &tfhe_params.glwe_params(),

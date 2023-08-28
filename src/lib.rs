@@ -9,6 +9,7 @@ use ops::dot_product;
 use rand::{thread_rng, CryptoRng, RngCore};
 use utils::{poly_dot_product, sample_binary_array, sample_gaussian, sample_uniform_array};
 
+mod boolean;
 mod bootstrapping;
 mod decomposer;
 mod ggsw;
