@@ -15,16 +15,6 @@ impl DecomposerParams {
     }
 }
 
-impl Default for DecomposerParams {
-    fn default() -> Self {
-        DecomposerParams {
-            log_base: 4,
-            levels: 8,
-            log_q: 32,
-        }
-    }
-}
-
 pub struct SignedDecomposer {
     pub(crate) params: DecomposerParams,
 }

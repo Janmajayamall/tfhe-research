@@ -21,94 +21,104 @@ mod test_vector;
 mod utils;
 
 pub struct TfheParams {
-    k: usize,
-    log_degree: usize,
-    n: usize,
+    glwe_dimension: usize,
+    glwe_poly_degree: usize,
+    lwe_dimension: usize,
     padding_bits: usize,
     log_p: usize,
     log_q: usize,
-    decomposer: DecomposerParams,
-    mean: f64,
-    std_dev: f64,
+    ks_decomposer: DecomposerParams,
+    pbs_decomposer: DecomposerParams,
+    lwe_std_dev: f64,
+    glwe_std_dev: f64,
 }
 
 impl TfheParams {
     pub fn glwe_params(&self) -> GlweParams {
         GlweParams {
-            k: self.k,
-            log_degree: self.log_degree,
+            glwe_dimension: self.glwe_dimension,
+            log_degree: self.glwe_poly_degree,
             log_q: self.log_q,
             log_p: self.log_p,
             padding_bits: self.padding_bits,
-            mean: self.mean,
-            std_dev: self.std_dev,
+            std_dev: self.glwe_std_dev,
         }
     }
 
     pub fn lwe_params(&self) -> LweParams {
         LweParams {
-            n: self.n,
+            lwe_dimension: self.lwe_dimension,
             log_q: self.log_q,
             log_p: self.log_p,
             padding_bits: self.padding_bits,
-            mean: self.mean,
-            std_dev: self.std_dev,
+            std_dev: self.lwe_std_dev,
         }
     }
 
     pub fn lwe_params_post_pbs(&self) -> LweParams {
         LweParams {
-            n: (1 << self.log_degree) * self.k,
+            lwe_dimension: (1 << self.glwe_poly_degree) * self.glwe_dimension,
             log_q: self.log_q,
             log_p: self.log_p,
             padding_bits: self.padding_bits,
-            mean: self.mean,
-            std_dev: self.std_dev,
+            std_dev: self.lwe_std_dev,
         }
     }
 
     pub fn ggsw_params(&self) -> GgswParams {
         GgswParams {
             glwe_params: self.glwe_params(),
-            decomposer_params: self.decomposer.clone(),
+            decomposer_params: self.pbs_decomposer.clone(),
         }
     }
 }
 
 impl Default for TfheParams {
-    // fn default() -> Self {
-    //     TfheParams {
-    //         k: 1,
-    //         log_degree: 9,
-    //         n: 4,
-    //         log_p: 2,
-    //         log_q: 32,
-    //         decomposer: DecomposerParams {
-    //             log_base: 4,
-    //             levels: 8,
-    //             log_q: 32,
-    //         },
-    //         mean: 0.0,
-    //         std_dev: 0.0,
-    //         padding_bits: 1,
-    //     }
-    // }
-
+    #[cfg(test)]
     fn default() -> Self {
         TfheParams {
-            k: 1,
-            log_degree: 9,
-            n: 722,
+            glwe_dimension: 2,
+            glwe_poly_degree: 9,
+            lwe_dimension: 4,
             log_p: 2,
             log_q: 32,
-            decomposer: DecomposerParams {
+            ks_decomposer: DecomposerParams {
                 log_base: 4,
-                levels: 8,
+                levels: 5,
                 log_q: 32,
             },
-            mean: 0.0,
-            std_dev: 0.000013071021089943935,
+            pbs_decomposer: DecomposerParams {
+                log_base: 4,
+                levels: 6,
+                log_q: 32,
+            },
             padding_bits: 1,
+            lwe_std_dev: 0.000013071021089943935,
+            glwe_std_dev: 0.00000004990272175010415,
+        }
+    }
+
+    #[cfg(not(test))]
+    fn default() -> Self {
+        TfheParams {
+            glwe_dimension: 2,
+            glwe_poly_degree: 9,
+            lwe_dimension: 722,
+            log_p: 2,
+            log_q: 32,
+            ks_decomposer: DecomposerParams {
+                log_base: 4,
+                levels: 5,
+                log_q: 32,
+            },
+            pbs_decomposer: DecomposerParams {
+                log_base: 4,
+                levels: 6,
+                log_q: 32,
+            },
+            padding_bits: 1,
+            lwe_std_dev: 0.000013071021089943935,
+            glwe_std_dev: 0.00000004990272175010415,
         }
     }
 }

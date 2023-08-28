@@ -8,6 +8,7 @@ use crate::{
         GlweCleartext, GlweParams, GlweSecretKey,
     },
     utils::poly_dot_product,
+    TfheParams,
 };
 
 /// Although message must be a polynomial in Z_{N}[X] we only require
@@ -29,16 +30,7 @@ pub struct GgswParams {
 
 impl Default for GgswParams {
     fn default() -> Self {
-        let glwe_params = GlweParams::default();
-        let decomposer_params = DecomposerParams {
-            log_base: 4,
-            levels: 8,
-            log_q: glwe_params.log_q,
-        };
-        GgswParams {
-            glwe_params,
-            decomposer_params,
-        }
+        TfheParams::default().ggsw_params()
     }
 }
 
@@ -88,7 +80,7 @@ pub fn encrypt_ggsw_plaintext<R: CryptoRng + RngCore>(
     rng: &mut R,
 ) -> GgswCiphertext {
     let mut ggsw_matrix = None;
-    for i in 0..(ggsw_params.glwe_params.k + 1) {
+    for i in 0..(ggsw_params.glwe_params.glwe_dimension + 1) {
         // which of the polynomial in zero encryption to add constant value `m*decomposition_factor`
         let add_index = i;
 
@@ -146,7 +138,7 @@ fn external_product(
     let decomposed_glwe_ciphertext = decompose_glwe_ciphertext(glwe_ciphertext, &signed_decomposer);
 
     // In ggsw each GLWE ciphertext corresponds to a row
-    let k = ggsw_params.glwe_params.k;
+    let k = ggsw_params.glwe_params.glwe_dimension;
     let mut glwe_ciphertext = None;
 
     for ggsw_col in 0..k + 1 {

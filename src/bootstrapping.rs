@@ -37,8 +37,6 @@ pub fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
         })
         .collect_vec();
 
-    let signed_decomposer = SignedDecomposer::new(tfhe_params.decomposer.clone());
-
     // Generate key switching key from GLWE to LWE
     let glwe_as_lwe_sk = LweSecretKey::from(glwe_secret_key);
     let lwe_params_post_pbs = tfhe_params.lwe_params_post_pbs();
@@ -48,7 +46,7 @@ pub fn bootstrapping_key_gen<R: CryptoRng + RngCore>(
         lwe_secret_key,
         &lwe_params_post_pbs,
         &lwe_params,
-        &signed_decomposer,
+        &SignedDecomposer::new(tfhe_params.ks_decomposer.clone()),
         rng,
     );
     BootstrappingKey {
@@ -69,7 +67,7 @@ pub fn bootstrap(
     let approximate_lwe = switch_modulus(
         lwe_ciphertext.data.as_slice().unwrap(),
         tfhe_params.log_q,
-        tfhe_params.log_degree + 1,
+        tfhe_params.glwe_poly_degree + 1,
     );
 
     let glwe_params = tfhe_params.glwe_params();
@@ -79,7 +77,7 @@ pub fn bootstrap(
 
     // X^-b
     let b_approx = Monomial {
-        index: -(approximate_lwe[tfhe_params.n] as isize),
+        index: -(approximate_lwe[tfhe_params.lwe_dimension] as isize),
     };
     let v_x = trivial_encrypt_glwe_plaintext(
         &glwe_params,
@@ -89,7 +87,7 @@ pub fn bootstrap(
 
     let ggsw_params = tfhe_params.ggsw_params();
 
-    for i in 0..tfhe_params.n {
+    for i in 0..tfhe_params.lwe_dimension {
         // tmp = (tmp + (approximate_lwe[i])) % mod_2n;
 
         // acc * X^{a_i}
@@ -109,14 +107,12 @@ pub fn bootstrap(
     // extract the constant term in acc GLWE ciphertext
     let bootstrapped_lwe = sample_extract(&acc, &glwe_params, 0);
 
-    let signed_decomposer = SignedDecomposer::new(tfhe_params.decomposer.clone());
-
     // key switch bootstrapped LWE
     let key_switched_lwe = key_switch_lwe(
         &bootstrapped_lwe,
         &tfhe_params.lwe_params_post_pbs(),
         &tfhe_params.lwe_params(),
-        &signed_decomposer,
+        &SignedDecomposer::new(tfhe_params.ks_decomposer.clone()),
         &bootstrapping_key.ksk,
     );
 
@@ -131,7 +127,7 @@ fn sample_extract(
     assert!(sample_index < glwe_params.degree());
     let lwe_b = *glwe_ciphertext
         .data
-        .get((glwe_params.k, sample_index))
+        .get((glwe_params.glwe_dimension, sample_index))
         .unwrap();
 
     let mut lwe_as = vec![];
@@ -168,7 +164,7 @@ mod tests {
             GlweSecretKey,
         },
         lwe::{self, decrypt_lwe, encrypt_lwe_plaintext, LweCleartext, LweParams, LweSecretKey},
-        test_vector::construct_test_vector,
+        test_vector::{construct_identity_test_vector, construct_test_vector_boolean},
     };
     use rand::{distributions::Uniform, thread_rng, Rng};
 
@@ -215,7 +211,7 @@ mod tests {
         let lwe_ciphertext =
             encrypt_lwe_plaintext(&lwe_params, &lwe_secret_key, &lwe_plaintext, &mut rng);
 
-        let test_vector_poly = construct_test_vector(&tfhe_params, |lhs, rhs| lhs & rhs);
+        let test_vector_poly = construct_identity_test_vector(&tfhe_params);
 
         let bootstrapped_lwe_ct = bootstrap(
             &tfhe_params,
@@ -246,7 +242,7 @@ mod tests {
         let lwe_ciphertext =
             encrypt_lwe_plaintext(&lwe_params, &lwe_secret_key, &lwe_plaintext, &mut rng);
 
-        let test_vector_poly = construct_test_vector(&tfhe_params, |lhs, rhs| lhs & rhs);
+        let test_vector_poly = construct_identity_test_vector(&tfhe_params);
         let test_vector_poly = GlweCleartext::encode_message(
             test_vector_poly.as_slice().unwrap(),
             &tfhe_params.glwe_params(),
@@ -256,20 +252,20 @@ mod tests {
         let approximate_lwe = switch_modulus(
             lwe_ciphertext.data.as_slice().unwrap(),
             tfhe_params.log_q,
-            tfhe_params.log_degree + 1,
+            tfhe_params.glwe_poly_degree + 1,
         );
 
-        let mod_2n = 1u32 << (tfhe_params.log_degree + 1);
-        let mut tmp = mod_2n - approximate_lwe[tfhe_params.n];
+        let mod_2n = 1u32 << (tfhe_params.glwe_poly_degree + 1);
+        let mut tmp = mod_2n - approximate_lwe[tfhe_params.lwe_dimension];
 
-        let b_approx = approximate_lwe[tfhe_params.n];
+        let b_approx = approximate_lwe[tfhe_params.lwe_dimension];
         let mut acc = poly_mul_monomial_custom_mod(
             test_vector_poly.view(),
             -(b_approx as isize),
             tfhe_params.log_q,
         );
 
-        for i in 0..tfhe_params.n {
+        for i in 0..tfhe_params.lwe_dimension {
             if lwe_secret_key.data[i] != 0 {
                 tmp = (tmp + (approximate_lwe[i])) % mod_2n;
 

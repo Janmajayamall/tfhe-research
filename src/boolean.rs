@@ -1,7 +1,7 @@
 use crate::{
     bootstrapping::{bootstrap, BootstrappingKey},
     lwe::LweCiphertext,
-    test_vector::construct_test_vector,
+    test_vector::construct_test_vector_boolean,
     utils::random_keys,
     TfheParams,
 };
@@ -12,7 +12,7 @@ fn and(
     ct1: &LweCiphertext,
     bk: &BootstrappingKey,
 ) -> LweCiphertext {
-    let test_vector_poly = construct_test_vector(tfhe_params, |lhs, rhs| lhs & rhs);
+    let test_vector_poly = construct_test_vector_boolean(tfhe_params, |lhs, rhs| lhs & rhs);
     let (lwe_secret_key, glwe_secret_key) = random_keys(tfhe_params);
 
     let ct_in = &(ct1 * 2u32) + ct0;
@@ -35,7 +35,7 @@ fn or(
     ct1: &LweCiphertext,
     bk: &BootstrappingKey,
 ) -> LweCiphertext {
-    let test_vector_poly = construct_test_vector(tfhe_params, |lhs, rhs| lhs | rhs);
+    let test_vector_poly = construct_test_vector_boolean(tfhe_params, |lhs, rhs| lhs | rhs);
     let (lwe_secret_key, glwe_secret_key) = random_keys(tfhe_params);
 
     let ct_in = &(ct1 * 2u32) + ct0;
@@ -96,6 +96,7 @@ mod tests {
             let res = pt.decode(&lwe_params);
 
             assert_eq!(lhs & rhs, res.message);
+            println!("Works for {i} ");
         }
     }
 }

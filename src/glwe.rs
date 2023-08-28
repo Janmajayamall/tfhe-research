@@ -5,6 +5,7 @@ use crate::{
         poly_dot_product, poly_mul_monomial, sample_binary_array, sample_gaussian_array,
         sample_uniform_array,
     },
+    TfheParams,
 };
 use itertools::{izip, Itertools};
 use ndarray::{concatenate, s, Array, Array1, Array2, ArrayView1, Axis};
@@ -109,14 +110,13 @@ pub fn decompose_glwe_ciphertext(
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 pub struct GlweParams {
-    pub(crate) k: usize,
+    pub(crate) glwe_dimension: usize,
     pub(crate) log_degree: usize,
     pub(crate) padding_bits: usize,
     /// q in Z/2^qZ
     pub(crate) log_q: usize,
     /// p in Z/2^pZ
     pub(crate) log_p: usize,
-    pub(crate) mean: f64,
     pub(crate) std_dev: f64,
 }
 
@@ -129,17 +129,7 @@ impl GlweParams {
 
 impl Default for GlweParams {
     fn default() -> Self {
-        GlweParams {
-            k: 2,
-            log_degree: 9,
-            /// q in Z/2^qZ
-            log_q: 32,
-            padding_bits: 1,
-            /// p in Z/2^pZ
-            log_p: 8,
-            mean: 0.0,
-            std_dev: 0.1231231,
-        }
+        TfheParams::default().glwe_params()
     }
 }
 
@@ -186,7 +176,7 @@ pub struct GlweSecretKey {
 impl GlweSecretKey {
     pub fn random<R: CryptoRng + RngCore>(glwe_params: &GlweParams, rng: &mut R) -> GlweSecretKey {
         GlweSecretKey {
-            data: sample_binary_array(rng, (glwe_params.k, glwe_params.degree())),
+            data: sample_binary_array(rng, (glwe_params.glwe_dimension, glwe_params.degree())),
         }
     }
 }
@@ -202,17 +192,12 @@ pub fn encrypt_glwe_zero<R: CryptoRng + RngCore>(
     sk: &GlweSecretKey,
     rng: &mut R,
 ) -> GlweCiphertext {
-    let a_samples = sample_uniform_array(rng, (glwe_params.k, glwe_params.degree()));
+    let a_samples = sample_uniform_array(rng, (glwe_params.glwe_dimension, glwe_params.degree()));
 
     let mut a_s = poly_dot_product(&a_samples.view(), &sk.data.view());
 
     // sample error
-    let error = sample_gaussian_array(
-        glwe_params.mean,
-        glwe_params.std_dev,
-        rng,
-        (glwe_params.degree()),
-    );
+    let error = sample_gaussian_array(glwe_params.std_dev, rng, (glwe_params.degree()));
 
     // \sum a*s + e
     a_s.add_assign(&error);
@@ -233,7 +218,10 @@ pub fn encrypt_glwe_plaintext<R: CryptoRng + RngCore>(
 
     // add message polynomial to `b` polynomial
     izip!(
-        zero_encryption.data.row_mut(glwe_params.k).iter_mut(),
+        zero_encryption
+            .data
+            .row_mut(glwe_params.glwe_dimension)
+            .iter_mut(),
         glwe_plaintext.data.iter()
     )
     .for_each(|(c, m)| *c = c.wrapping_add(*m));
@@ -245,8 +233,8 @@ pub fn trivial_encrypt_glwe_plaintext(
     glwe_params: &GlweParams,
     glwe_plaintext: &GlwePlaintext,
 ) -> GlweCiphertext {
-    let mut data = Array2::zeros((glwe_params.k + 1, glwe_params.degree()));
-    data.row_mut(glwe_params.k)
+    let mut data = Array2::zeros((glwe_params.glwe_dimension + 1, glwe_params.degree()));
+    data.row_mut(glwe_params.glwe_dimension)
         .as_slice_mut()
         .unwrap()
         .copy_from_slice(glwe_plaintext.data.as_slice().unwrap());
@@ -260,11 +248,11 @@ pub fn decrypt_glwe_ciphertext<R: CryptoRng + RngCore>(
     ct: &GlweCiphertext,
     rng: &mut R,
 ) -> GlwePlaintext {
-    let a_samples = ct.data.slice(s![..glwe_params.k, ..]);
+    let a_samples = ct.data.slice(s![..glwe_params.glwe_dimension, ..]);
     let mut a_s = poly_dot_product(&a_samples, &sk.data.view());
 
     // b - \sum a*s
-    let mut plaintext = Array1::from_vec(ct.data.row(glwe_params.k).to_vec());
+    let mut plaintext = Array1::from_vec(ct.data.row(glwe_params.glwe_dimension).to_vec());
     izip!(
         plaintext.as_slice_mut().unwrap().iter_mut(),
         a_s.as_slice_mut().unwrap().iter()

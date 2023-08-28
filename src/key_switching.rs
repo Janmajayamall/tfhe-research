@@ -27,8 +27,8 @@ impl KeySwitchingKey {
     ) -> KeySwitchingKey {
         // (from_n*levels) x to_n
         let mut ksk = Array2::zeros((
-            from_lwe_params.n * signed_decomposer.params.levels,
-            to_lwe_params.n + 1,
+            from_lwe_params.lwe_dimension * signed_decomposer.params.levels,
+            to_lwe_params.lwe_dimension + 1,
         ));
         from_lwe_sk
             .data
@@ -44,8 +44,8 @@ impl KeySwitchingKey {
 
                     // encrypt s_bit * factor
                     let mut zero_encryption = encrypt_lwe_zero(to_lwe_params, to_lwe_sk, rng);
-                    zero_encryption.data[to_lwe_params.n] =
-                        zero_encryption.data[to_lwe_params.n].wrapping_add(factor);
+                    zero_encryption.data[to_lwe_params.lwe_dimension] =
+                        zero_encryption.data[to_lwe_params.lwe_dimension].wrapping_add(factor);
 
                     // row in ksk
                     let row_ksk = s_index * signed_decomposer.params.levels + level_index;
@@ -73,12 +73,12 @@ pub fn key_switch_lwe(
         .as_slice()
         .unwrap()
         .iter()
-        .take(from_lwe_params.n)
+        .take(from_lwe_params.lwe_dimension)
         .flat_map(|a_i| signed_decomposer.decompose(*a_i))
         .collect_vec();
 
     // \sum (\sum a_ij * LWE(s_ij))
-    let mut sum = Array1::zeros(to_lwe_params.n + 1);
+    let mut sum = Array1::zeros(to_lwe_params.lwe_dimension + 1);
     izip!(
         a_decomposed_vector.iter(),
         key_switching_key.data.outer_iter()
@@ -89,11 +89,14 @@ pub fn key_switch_lwe(
     });
 
     // b - \sum (\sum a_ij * LWE(s_ij))
-    let b = lwe_ciphertext.data.get(from_lwe_params.n).unwrap();
+    let b = lwe_ciphertext
+        .data
+        .get(from_lwe_params.lwe_dimension)
+        .unwrap();
     // negate sum
     sum.iter_mut().for_each(|v| *v = v.wrapping_neg());
     // add b part of `from LWE` to b part of `to LWE`
-    let sum_b = sum.get_mut(to_lwe_params.n).unwrap();
+    let sum_b = sum.get_mut(to_lwe_params.lwe_dimension).unwrap();
     *sum_b = sum_b.wrapping_add(*b);
 
     LweCiphertext { data: sum }
@@ -131,7 +134,7 @@ mod tests {
         let to_params = tfhe_params.lwe_params();
         let to_sk = LweSecretKey::random(&to_params, &mut rng);
 
-        let signed_decomposer = SignedDecomposer::new(tfhe_params.decomposer);
+        let signed_decomposer = SignedDecomposer::new(tfhe_params.ks_decomposer);
 
         // gen ksk
         let ksk = KeySwitchingKey::generate_ksk(

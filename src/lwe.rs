@@ -24,24 +24,22 @@ impl Mul<u32> for &LweCiphertext {
 
 #[derive(Debug, Clone)]
 pub struct LweParams {
-    pub(crate) n: usize,
+    pub(crate) lwe_dimension: usize,
     /// q in Z/2^qZ
     pub(crate) padding_bits: usize,
     pub(crate) log_q: usize,
     /// p in Z/2^pZ
     pub(crate) log_p: usize,
-    pub(crate) mean: f64,
     pub(crate) std_dev: f64,
 }
 
 impl Default for LweParams {
     fn default() -> Self {
         LweParams {
-            n: 512,
+            lwe_dimension: 512,
             log_q: 32,
             padding_bits: 1,
             log_p: 8,
-            mean: 0.0,
             std_dev: 0.121312,
         }
     }
@@ -56,7 +54,7 @@ pub struct LweSecretKey {
 impl LweSecretKey {
     pub fn random<R: CryptoRng + RngCore>(lwe_params: &LweParams, rng: &mut R) -> LweSecretKey {
         LweSecretKey {
-            data: sample_binary_array(rng, (lwe_params.n)),
+            data: sample_binary_array(rng, (lwe_params.lwe_dimension)),
         }
     }
 }
@@ -121,10 +119,10 @@ pub fn encrypt_lwe_zero<R: CryptoRng + RngCore>(
     sk: &LweSecretKey,
     rng: &mut R,
 ) -> LweCiphertext {
-    let error = *sample_gaussian_slice(lwe_params.mean, lwe_params.std_dev, 1, rng)
+    let error = *sample_gaussian_slice(lwe_params.std_dev, 1, rng)
         .first()
         .unwrap();
-    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
+    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.lwe_dimension));
 
     let mut a_s = sk.data.dot(&a_samples);
     a_s += error;
@@ -143,11 +141,11 @@ pub fn encrypt_lwe_plaintext<R: CryptoRng + RngCore>(
     lwe_plaintext: &LwePlaintext,
     rng: &mut R,
 ) -> LweCiphertext {
-    let error = *sample_gaussian_slice(lwe_params.mean, lwe_params.std_dev, 1, rng)
+    let error = *sample_gaussian_slice(lwe_params.std_dev, 1, rng)
         .first()
         .unwrap();
 
-    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.n));
+    let mut a_samples: Array1<u32> = sample_uniform_array(rng, (lwe_params.lwe_dimension));
 
     let mut a_s = sk.data.dot(&a_samples);
     a_s = a_s.wrapping_add(error);
@@ -168,7 +166,7 @@ pub fn decrypt_lwe(lwe_params: &LweParams, sk: &LweSecretKey, ct: &LweCiphertext
     let a_s = sk.data.dot(&a_samples);
     // last eleement in ciphertext data is b
     // b - a*s
-    let mut plaintext = ct.data.as_slice().unwrap()[lwe_params.n];
+    let mut plaintext = ct.data.as_slice().unwrap()[lwe_params.lwe_dimension];
     plaintext = plaintext.wrapping_sub(a_s);
 
     LwePlaintext { data: plaintext }

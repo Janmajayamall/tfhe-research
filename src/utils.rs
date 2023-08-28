@@ -41,12 +41,11 @@ pub fn f64_to_torus_unsigned_representation(v: f64) -> u32 {
 }
 
 pub fn sample_gaussian_slice<R: CryptoRng + RngCore>(
-    mean: f64,
     std_dev: f64,
     size: usize,
     rng: &mut R,
 ) -> Vec<u32> {
-    let normal = Normal::new(mean, std_dev).unwrap();
+    let normal = Normal::new(0.0, std_dev).unwrap();
     normal
         .sample_iter(rng)
         .take(size)
@@ -55,7 +54,6 @@ pub fn sample_gaussian_slice<R: CryptoRng + RngCore>(
 }
 
 pub fn sample_gaussian_array<S: ShapeBuilder, R: CryptoRng + RngCore>(
-    mean: f64,
     std_dev: f64,
     rng: &mut R,
     shape: S,
@@ -63,7 +61,7 @@ pub fn sample_gaussian_array<S: ShapeBuilder, R: CryptoRng + RngCore>(
     let mut res = Array::zeros(shape);
     let fill = res.as_slice_mut().unwrap();
     let size = fill.len();
-    fill.copy_from_slice(sample_gaussian_slice(mean, std_dev, size, rng).as_slice());
+    fill.copy_from_slice(sample_gaussian_slice(std_dev, size, rng).as_slice());
     res
 }
 
@@ -337,7 +335,7 @@ mod tests {
     #[test]
     fn test() {
         let mut rng = thread_rng();
-        let v = sample_gaussian_slice(0.0, 0.0, 10, &mut rng);
+        let v = sample_gaussian_slice(0.0, 10, &mut rng);
         dbg!(v);
     }
 }
