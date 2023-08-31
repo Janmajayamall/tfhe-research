@@ -104,26 +104,60 @@ where $\beta^{l-{i+1}}$ values are from the first column of $G^T$.
 
 
 External product is calculated as: 
-$$ct_{ggsw} \cdot ct_glwe = G^{-1}(ct_{glwe}) (\pi + m_2G^T) = G^{-1}(ct_{glwe})\pi + G^{-1}(ct_{glwe})mG^T = GLWE(0) + GLWE(m_1m_2)$$
+$$ct_{ggsw} \cdot ct_{glwe} = G^{-1}(ct_{glwe}) (\pi + m_2G^T) = G^{-1}(ct_{glwe})\pi + G^{-1}(ct_{glwe})mG^T = GLWE(0) + GLWE(m_1m_2)$$
 
+$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = G^{-1}(ct_{glwe}) (\pi + m_2G^T)$$
+$$= G^{-1}(ct_{glwe}(m_1))\pi + m_2G^{-1}(ct_{glwe}(m_2))G^T$$
+$$=\pi + m_2ct_{glwe}(m_1)$$
+Since $ct_{glwe}(m_1) = \Delta m_1 + e$ and $\pi$ is encryption of 0.
+$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = \Delta m_2m_1 + m_2e$$
+
+
+TODO: Stop assuming $\beta^l = q$ and rewrite the equations. 
+
+## GLEV and GGSW
+
+Given message $m_1 \in Z_{N, q}$, and decomposition parameters base \beta, and level l, GLEV(m) is: 
+$$GLEV(m_1) = [GLWE(m_1\frac{q}{\beta^{1}}),..., GLWE(m_1\frac{q}{\beta^{l}})] \in R_q^{l \times (k+1)}$$
+
+Notice that GLEV encryption is encrypts $m_1$ with different recomposition factors, starting with recomposition factor for most significant digits. 
+
+**GGSW encryption** of $m \in Z_{N,q}$ now becomes a collection of GLEV encryptions as: 
+$$GGSW(m) = [GLEV(-S_i\cdot m), ..., GLEV(-S_{k-1} \cdot m), GLEV(m)] \in R_q^{(k+1) \times (l(k+1))}$$
+where $S_i$ is $i^{th}$ secret polynomial in GLWE secret key $sk$.
+
+**External product**
+
+Given GLWE(m_1) and GGSW(m_2), we first calculate G^{-1} (GLWE(m_1)) as:
+$$G^{-1} (GLWE(m_1)) = G^{-1} [a_0, ..., a_{k-1}, b] = [a_{0,1}, ..., a_{0,l}, a_{1,1}, ..., a_{k-1,l}, b_{1},..., b_{l}]$$
+ Then we calculate inner product between $G^{-1} (GLWE(m_1))$ and $GGSW(m)$ as:
+ $$\sum_{i=0}^{k-1}<[a_{i,1}, ... a_{i,l}] GLEV(-S_im_2) > + <[b_{1}, ... b_{l}] GLEV(m_2) >$$
+Since $[a_{i,1}, ... a_{i,l}]$ are decomposed values of $a_i$ (starting with most significant digit), 
+$$<[a_{i,1}, ... a_{i,l}] GLEV(-S_im_2) > = \sum_{j=1}^{l} a_{i,j} GLWE(-Sm_2\frac{q}{\beta^{i+1}})$$
+$$= GLWE(-S_ia_im_2)$$
+Thus since $b - \sum S_ia_i = \Delta m_1$, 
+$$=\sum GLWE(-S_ia_im_2) + GLWE(bm_2) = GLWE(\Delta m_1m_2 )$$
+
+## GLEV approach vs Normal Approach
+
+The only good reason that I am able to come up with for using GLEV approach over normal approach is that GLEV requires $l(k+1)$ multiplication in $Z_{N,q}$ whereas normal approach requires $l(k+1) \times (k+1)$ multiplications (normal approach multiplies row vector with a matrix).
 
 ## Ciphertext Multiplication
 
 You can easily multiply a GLWE ciphertext with a scalar by multiplying polynomial with the scalar. However, multiplications between two ciphertexts is not trivial. This is because internal product over Torus is not defined, you need to use external product. 
 
-Let $x \in \mathbb{Z}$ and $a \in \mathbb{T}$. External product betwen $x$ and $a$ is defined as
+Let $x \in \mathbb{Z}$ and $a \in \mathbb{T}$. External product between $x$ and $a$ is defined as
 $$x \cdot a = a + a + ... + a \space (x \ times)$$
 
-We cannot port this definition directly to encrypted context. In other words, we can cannot add a given GLWE ciphertext by itself $x$ no. of times, where $x$ itself is unknown. To perform chiphertext multiplication between $x \in \mathbb{Z}_{N}[X]$ and $a \in \mathbb{Z}_{N,q}[X]$ we must first encrypt $a$ under GLWE and $x$ under GGSW. Result of their external product equal to GLSW encryption of $x \cdot a$, that is 
+We cannot port this definition directly to encrypted context. In other words, we can cannot add a given GLWE ciphertext by itself $x$ no. of times, where $x$ itself is unknown. To perform ciphertext multiplication between $x \in \mathbb{Z}_{N}[X]$ and $a \in \mathbb{Z}_{N,q}[X]$ we must first encrypt $a$ under GLWE and $x$ under GGSW. Result of their external product equals GLWE encryption of $x \cdot a$, that is 
 $$GLWE(x \cdot a) = GGSW(x) \cdot GLWE(a)$$
 
-To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
-$$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$
-
-
+%%To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
+$$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$%%
 
 ## CMUX
 
+TODO
 
 # Bootstrapping
 
