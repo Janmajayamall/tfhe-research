@@ -117,10 +117,10 @@ TODO: Stop assuming $\beta^l = q$ and rewrite the equations.
 
 ## GLEV and GGSW
 
-Given message $m_1 \in Z_{N, q}$, and decomposition parameters base \beta, and level l, GLEV(m) is: 
+Given message $m_1 \in Z_{N, q}$, and decomposition parameters base \beta, and level l, $GLEV(m_1)$ is: 
 $$GLEV(m_1) = [GLWE(m_1\frac{q}{\beta^{1}}),..., GLWE(m_1\frac{q}{\beta^{l}})] \in R_q^{l \times (k+1)}$$
 
-Notice that GLEV encryption is encrypts $m_1$ with different recomposition factors, starting with recomposition factor for most significant digits. 
+Notice that GLEV encryption encrypts $m_1$ with different recomposition factors, starting with recomposition factor for most significant digits. 
 
 **GGSW encryption** of $m \in Z_{N,q}$ now becomes a collection of GLEV encryptions as: 
 $$GGSW(m) = [GLEV(-S_i\cdot m), ..., GLEV(-S_{k-1} \cdot m), GLEV(m)] \in R_q^{(k+1) \times (l(k+1))}$$
@@ -128,12 +128,12 @@ where $S_i$ is $i^{th}$ secret polynomial in GLWE secret key $sk$.
 
 **External product**
 
-Given GLWE(m_1) and GGSW(m_2), we first calculate G^{-1} (GLWE(m_1)) as:
+Given $GLWE(m_1)$ and $GGSW(m_2)$, we first calculate $G^{-1} (GLWE(m_1))$ as:
 $$G^{-1} (GLWE(m_1)) = G^{-1} [a_0, ..., a_{k-1}, b] = [a_{0,1}, ..., a_{0,l}, a_{1,1}, ..., a_{k-1,l}, b_{1},..., b_{l}]$$
  Then we calculate inner product between $G^{-1} (GLWE(m_1))$ and $GGSW(m)$ as:
  $$\sum_{i=0}^{k-1}<[a_{i,1}, ... a_{i,l}] GLEV(-S_im_2) > + <[b_{1}, ... b_{l}] GLEV(m_2) >$$
 Since $[a_{i,1}, ... a_{i,l}]$ are decomposed values of $a_i$ (starting with most significant digit), 
-$$<[a_{i,1}, ... a_{i,l}] GLEV(-S_im_2) > = \sum_{j=1}^{l} a_{i,j} GLWE(-Sm_2\frac{q}{\beta^{i+1}})$$
+$$<[a_{i,1}, ... a_{i,l}] GLEV(-S_im_2) > \space = \sum_{j=1}^{l} a_{i,j} GLWE(-Sm_2\frac{q}{\beta^{j+1}})$$
 $$= GLWE(-S_ia_im_2)$$
 Thus since $b - \sum S_ia_i = \Delta m_1$, 
 $$=\sum GLWE(-S_ia_im_2) + GLWE(bm_2) = GLWE(\Delta m_1m_2 )$$
@@ -181,28 +181,31 @@ $a' = [\sum a_{(i)n},\sum a_{(i)n-1}, ..., \sum a_{(i)0}, \sum -a_{(i)N-1}, -\su
 
 For implementation refer to glw_sample_extraction of tfhe-rs.
 
-## Test polynomial
+## Intuition
 
-Recall that decryption of LWE without removing noise is:
-$$\mu = b - \sum{a_is_i} \mod{q}$$ 
-
-The intuition behind blind rotation is to construct a polynomial as: 
+Recall that decryption of LWE equals:
+$$\mu = \Delta{m} + e = b - \sum{a_is_i} \mod{q}$$
+During bootstrapping we construct a polynomial as: 
 $$X^{-b + \sum{a_is_i}}$$
-In other words, we obtain $-\mu$ in the exponent of the polynomial. We the multiply the obtained polynomial with $v(x)$:
+and then multiply it with test polynomial $v(x) \in R_q$, that is
 $$X^{-\mu} \cdot v(x)$$
-to get $\mu^{th}$ coefficient of v(x) as constant term (ie rotate v left by $\mu$ positions).
+The output polynomial rotates $v(x)$ by $-\mu$. Test vector polynomial $v(x)$ is constructed such that desired plaintext value is obtained in constant term of output polynomial after rotation. 
 
-But notice that
-1. $X \in Z_{N,q}[X]$, thus $X$ is of order $2N$ in $Z_{N,q}[X]$ (ie $X^{2N}=1$). This implies instead of $\mu$, $-\hat\mu$ must be calculated as: 
-   $$-\hat{b} + \sum{\hat{a_i}s_i} \mod 2N$$which is mod 2N instead of mod q, where $\hat{b}$ and $\hat{a_i}$ are approximate values in mod 2N calculated as
-   $$\hat{b} = round(\frac{2N \cdot b}{q}) \mod 2N$$
-   and 
-   $$\hat{a_i} = round(\frac{2N \cdot a_i}{q}) \mod 2N$$
-   Note that error induced by approximation is called *drift*. It can be reduced by choosing appropriate parameters.
-2. Another problem is that since $v(x)$ can have only $N$ coefficients we can only map $N$ encode $N$ values in $v(x)$. This requires us to limit magnitude of $-\hat\mu$ to $N$ values. This can be achieved limiting $\mu = b + \sum a_is_i$ (decryption with noise) to $q/2$. In practice we this translates to setting carry bit greater than or equal to 1, so that noise less encoded plaintext can have a maximum value $q/2$.
-3. Another thing to notice is that that $-\hat\mu$ consists of noise (it is decryption without rounding). Recall that in decryption procedure, a range values will map to same message and to obtain the message from decrypted plaintext we need to round it (Imagine the torus). Similarly, when encoding coefficients in $v(x)$ we encode the same plaintext over a range of coefficients. This ensures that rotation by $-\hat\mu$ (which contains errors) maps to correct encoded plaintext coefficient. 
-4. Following from (3), recall that $\mu$, thus $\hat\mu$,can be negative as well. This becomes a problem for values at the border (ie values corresponding to 0). Imagining the torus again and recall that negative values upto error range beyond 0, must round back to 0. We need to assure that the same is handled in $v(x)$. If  $\hat\mu$ is negative it will rotate $v(x)$ by right. To make sure that value corresponding to 0 land in coefficient of $v(x)$ we need to encode some of higher coefficients with value corresponding to 0. Moreover, since rotation towards right wraps higher coefficients around, thus negating them ($v(x)$ is negacylic) we need to negate the values encoded in higher coefficients. This assures that upon wrapping around, we get correct positive values in $v(x)$'s constant term. 
-   
+> **Note**
+> Since $R_q = Z_q/X^N+1$, polynomial has order $2N$ and $X^{-\mu} = X^{2N - \mu}$
+
+Notice that if $0 \leq \mu \leq N$, then $X^{-\mu} \cdot v(x)$ outputs $\mu^{th}$ coefficient of $v(x)$. 
+
+However when $N \leq \mu \leq 2N$, $X^{-\mu} \cdot v(x)$  outputs $-(\mu - N)^{th}$ coefficient of $v(x)$. This is because $\mu = N + k$ and due to negacyclic property of $R_q$ multiplication by $X^N$ wraps around and negates the coefficients. 
+
+To generalise: 
+$$X^{-\mu} \cdot v(x) = (-1^{\text{floor}(\mu/N)}) \cdot X^{-(\mu \mod N)}$$
+
+Moreover, observe that in $v(x)$ we can only encode $N$ elements and the rest are obtained as negative of the encoded elements. This implies bootstrapping natively suits only a certain class functions: $f(x + p/2) = -f(x)$ (where p is input space; plaintext space). Such functions are called negacyclic functions. (Note:  $p$ and $N$ are interchangeable in context of the function $f(x)$ because LWE ciphertext is modulus switched from $q \rightarrow 2N$ as $\text{round}(2N \cdot ct) \mod 2N$ to maintain periodicity).
+
+To encode general functions in test polynomial (& identity function itself) it must be assured that $\mu \leq N$. In practice this is achieved by setting the first bit of plaintext space to 0. This has a consequence that plaintext space is now halved and there are solutions proposed, such as WoPBS, to get around this problem. 
+
+## Constructing test vector
 
 In practice test polynomial is constructed as (we view polynomial with coefficient vector): 
 1. Construct vector $m$ consisting of all possible values in message space $[0, 2^M)$, as:
@@ -215,7 +218,7 @@ In practice test polynomial is constructed as (we view polynomial with coefficie
 Note that replacing vector $m$ with an output of a function, turns bootstrapping into programmable bootstrapping (PBS). That is for function $f(x) | x \in [0, 2^M)$, construct $m$ as
 $$m = [f(0), f(1), ..., f(2^M-1)]$$
 
-It is worth noting that boostrapping is PBS with identity function. 
+It is worth noting that bootstrapping is PBS with identity function. 
 
 ## Blind rotation
 
@@ -359,7 +362,42 @@ There are two effects of using signed decomposition:
 2. The maximum representable value, ie $a$, is reduced to $\sum (\beta/2 - 1)\beta^i$. This means we need to limit the value of $a$. (I believe) in practice this is achieved by having $\geq 1$   carry bits. Check [this](https://jeremykun.com/2021/12/11/the-gadget-decomposition-in-fhe/) post for more information.
 
 
+# Parameters and noise analysis
 
+## Swapping order of bootstrapping in and keyswitching
+
+As highlighted in the [guide](https://assets.researchsquare.com/files/rs-2841900/v1_covered.pdf) and first observed in [paper](https://eprint.iacr.org/2017/1114.pdf) and further analysed in [paper](https://eprint.iacr.org/2022/704), swapping the order of key switching with bootstrapping results lesser noise growth during evaluation of TFHE operations, thus more efficient parameters. 
+
+In the originally proposed version of TFHE, a given LWE ciphertext $\in Z_q^{n+1}$ is first bootstrapped and then key switched from LWE secret key $s' \in \mathbb{B}^{k \cdot N}$ (ie GLWE key viewed as LEW key) to $s  \in \mathbb{B}^{n}$ (ie LWE secret key using which the input ciphertext is encrypted). It outputs LWE ciphertext $\in Z_q^{n+1}$. 
+
+To swap the order, the input LWE ciphertext $\in Z_q^{k \cdot N + 1}$ is first key switched from $s'$ to $s$. Then bootstrapped to output a ciphertext $\in Z_q^{k \cdot N + 1}$. To gain an intuitive understanding of why switching the order reduces noise during TFHE gate evaluation, consider the following gate: 
+
+Let's define a gate $G$ that given LWE ciphertext $ct_0, ct_1, ..., ct_n$ outputs a ciphertext $ct_s$  such that
+$$m_s = \sum w_i m_i$$
+The gate calculates: 
+$$ct_r = \sum w_i \cdot ct_i$$
+For some weights $w_0, w_1,...,w_n \in Z_p^{n}$ 
+
+Assuming the noise variance of $ct_i$ as $v_i$, the noise of output ciphertext will be weighted sum squares of $||w_i||$: 
+$$v_s = \sum ||w_i||^2 \cdot v_i$$
+Assuming variance of all input ciphertexts $ct_i$ equals $v_t$ we can re-write $v_s$ as:
+$$v_s = v_t \sum ||w_i||^2 $$
+
+In originally proposed version of TFHE, $v_t$ will equal: 
+$$v_t = v_{bs} + v_{ks}$$
+where $v_{bs}$ is noise in refreshed ciphertext after bootstrapping and $v_{ks}$ is noise incurred in key switching. 
+
+However, in swapped version of TFHE $v_t$ will equal $v_{bs}$. Thus during gate evaluation noise growth will be $v_{bs} \cdot \sum ||w_i||^2$ as opposed to $(v_{bs} + v_{ks})\sum ||w_i||^2$ in the original version. 
+
+If one were to evaluate the gate $G$ and bootstrap repeatedly in a cycle, then noise growth in one cycle, before bootstrapping again, will be: 
+
+Orignal version: 
+$(v_{bs} + v_{ks}) \cdot ||w_i||^2 + v_{drift}$
+
+New version:
+$(v_{bs}) \cdot ||w_i||^2 + v_{ks} + v_{drift}$
+
+Where $v_{drift}$ is additional noise due to modulus switching $q \rightarrow 2N$
 
 
 
