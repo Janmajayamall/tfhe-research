@@ -57,7 +57,7 @@ For any positive integer $n >= 1$ and k s.t. $k | n$,
 $$
 \Phi_{nk}(x) = \Phi_{n}(x^k) 
 $$
-I wouldn't add a proof here, but will refer you to the following [link](). 
+
 
 We can re-write $M^{th}$ cyclotomic polynomial as: 
 $$
@@ -87,7 +87,7 @@ $$
 The reason why we are interested in only cyclotomic polynomials that are some power of 2 is because they can be used to construct ring such as $Z_{N,q} = Z_q / X^N + 1$. Polynomials in such rings are known as negacylic polnyomials. 
 
 > *Note*: 
-> I don't know why do we use X^N+1 instead of X^N-1. But this can be because rings formed using [X^N+1 are considered more secure than X^N-1](https://jeremykun.com/2022/12/09/negacyclic-polynomial-multiplication/).
+> I don't know why do we use X^N+1 instead of X^N-1. But this can be because rings formed using [X^N+1 are considered](https://crypto.stackexchange.com/questions/100211/rlwe-explanation/100218#100218) [more secure than X^N-1](https://jeremykun.com/2022/12/09/negacyclic-polynomial-multiplication/).
 
 One special thing about polynomials in ring $Z_{N,q}$ is that multiplications wraps around and when they do the coefficients are negated. 
 
@@ -324,6 +324,10 @@ Since $c$ can either be 0 or 1, $out$ will be GLWE encryption of $m_1$ if $c=1$,
 
 # Bootstrapping
 
+Bootstrapping takes in a noisy LWE ciphertext and homomorphically runs the decryption procedure to product a fresh LWE ciphertext with fixed (& reduced) noise. 
+
+
+
 ## Sample Extraction GLWE to LWE
 
 Given a GLWE ciphertext $ct_{glwe} \in (\mathbb{Z}_{N,q})^{k+1}$ extracts LWE $ct_{lwe} \in \mathbb{Z}^{kN+1}$ ciphertext of sample at $n^{th}$ index.
@@ -346,42 +350,82 @@ For implementation refer to glw_sample_extraction of tfhe-rs.
 
 ## Intuition
 
-Recall that decryption of LWE equals:
+Recall that decryption of LWE ciphertext is defined as:
 $$\mu = \Delta{m} + e = b - \sum{a_is_i} \mod{q}$$
-During bootstrapping we construct a polynomial as: 
-$$X^{-b + \sum{a_is_i}}$$
-and then multiply it with test polynomial $v(x) \in R_q$, that is
-$$X^{-\mu} \cdot v(x)$$
-The output polynomial rotates $v(x)$ by $-\mu$. Test vector polynomial $v(x)$ is constructed such that desired plaintext value is obtained in constant term of output polynomial after rotation. 
 
-> **Note**
-> Since $R_q = Z_q/X^N+1$, polynomial has order $2N$ and $X^{-\mu} = X^{2N - \mu}$
+Now the question is, given that LWE, GLWE, and GGSW exist can we somehow calculate \mu homomorphically? And yes we can. 
 
-Notice that if $0 \leq \mu \leq N$, then $X^{-\mu} \cdot v(x)$ outputs $\mu^{th}$ coefficient of $v(x)$. 
+Recall that a plaintext in GLWE is $\in Z_{N,q}$ and we can multiple a GLWE ciphertext with a GLWE plaintext. The trick is to calculate \mu in the exponent of a GLWE plaintext. 
 
-However when $N \leq \mu \leq 2N$, $X^{-\mu} \cdot v(x)$  outputs $-(\mu - N)^{th}$ coefficient of $v(x)$. This is because $\mu = N + k$ and due to negacyclic property of $R_q$ multiplication by $X^N$ wraps around and negates the coefficients. 
+First, let's look at how it is done using a plaintext.
 
-To generalise: 
-$$X^{-\mu} \cdot v(x) = (-1^{\text{floor}(\mu/N)}) \cdot X^{-(\mu \mod N)}$$
+Given a LWE ciphertext $ct = (a_0, a_1, ..., a_n, b)$. Define $X \in Z_{N,q}$. Then raise $X$ to $-b$. Thus producing a $X^{-b}$. Then given LWE secret vector (s_0, s_1, ..., s_n) we calculate the inner product $\sum a_i\cdot s_i$ in the exponent and multiply the resulting polynomial with $X^{-b}$ thus producing a polynomial as $X^{-b + \sum a_is_i}$: 
+$$
+X^{-\mu} = X^{-b + as} = X^{-b}\prod_{i=0}^{n-1} (X^{a_is_i})
+$$
 
-Moreover, observe that in $v(x)$ we can only encode $N$ elements and the rest are obtained as negative of the encoded elements. This implies bootstrapping natively suits only a certain class functions: $f(x + p/2) = -f(x)$ (where p is input space; plaintext space). Such functions are called negacyclic functions. (Note:  $p$ and $N$ are interchangeable in context of the function $f(x)$ because LWE ciphertext is modulus switched from $q \rightarrow 2N$ as $\text{round}(2N \cdot ct) \mod 2N$ to maintain periodicity).
+Now if we construct another polynomial $v(x)$ such that it encodes the desirable corresponding plaintext in coefficient $\mu$, then $v(x) X^{-\mu}$ will output a polynomial with the desired value in constant term (i.e. $X^{-\mu}$ rotates $v(x)$ left by $\mu$). 
 
-To encode general functions in test polynomial (& identity function itself) it must be assured that $\mu \leq N$. In practice this is achieved by setting the first bit of plaintext space to 0. This has a consequence that plaintext space is now halved and there are solutions proposed, such as WoPBS, to get around this problem. 
+## Switching modulus from q to 2N
 
-## Constructing test vector
+One thing we ignored above is that $-\mu$ is calculated $\mod 2N$ instead of $\mod q$. The reason for this is that polynomial X $\in Z_{N,q}$ is negacylic thus has an order of $2N$ ($X^{2N} = 1$). 
 
-In practice test polynomial is constructed as (we view polynomial with coefficient vector): 
-1. Construct vector $m$ consisting of all possible values in message space $[0, 2^M)$, as:
-   $$[0,..,2^M-1]$$
-2. Divide N into $b$ blocks where $b = N/(2^M)$ and fill each block with repeated values of values in $m$ (this corresponds to mapping same noiseless values over the error range). 
-   $$[0,0,0,0,1,1,1,1,...,2^M-1]$$ where $b = 4$.
-3. Slice half of block corresponding to 0, negate its values and append it at the end. 
-4. Encode the resulting coefficient as a plaintext, since we view them as a valid GLWE ciphertext. This means multiply each value by $\Delta$.
+To switch the modulus from q to 2N we calculate:
 
-Note that replacing vector $m$ with an output of a function, turns bootstrapping into programmable bootstrapping (PBS). That is for function $f(x) | x \in [0, 2^M)$, construct $m$ as
-$$m = [f(0), f(1), ..., f(2^M-1)]$$
+$$b' = round(\frac{2N}{q}b) \mod 2N$$
+$$a_i' = round(\frac{2N}{q}a_i) \mod 2N$$
+>Note:
+>Switching modulus introduces additional error to bootstrapping procedure. This error is known as *drift*. One can reduce its impact over bootstrapping procedure by setting correct parameters. 
 
-It is worth noting that bootstrapping is PBS with identity function. 
+
+## Constructing $v(x)$ - test polynomial
+
+To construct v(x) correctly, let's look at possible values of $\mu$. 
+
+$\mu = \Delta m + e$
+
+Since for any plaintext m \mu can be several values due to $e$, we cannot encode m in just one of the coefficients of v(x). Instead we will have encode it in a continuous block of coefficients. Considering this and the fact the $\mu$ is periodic (i.e. block for plaintext 0, comes before block of plaintext 1 and so on and so forth), we can deduce the following: 
+1. Let's divide coefficient vector of v(x) into sets of p blocks, each with $v(x) / p$ coefficient slots. 
+2. The encode plaintext value of 0 in first block, plaintext value of 1 in second block, and so on and so forth. 
+
+For ex, if plaintext modulus $p = 4$ and $v(x)$ is of degree 15 then coefficient vector has 4 blocks each with 4 slots and can be constructed as:
+
+$$[0,0,0,0,\Delta1, \Delta1, \Delta1, \Delta1, \Delta2,\Delta2,\Delta2,\Delta2,\Delta3,\Delta3,\Delta3,\Delta3]$$
+
+However, notice that $e$ can be negative, so starting the first block at the first coefficient does not matches the periodicity of plaintext over torus. Instead it is exactly rotated to right by half of the size of block. To match the periodicity of torus we rotate the vector left by half of the size of block. 
+
+$$[0,0,\Delta1, \Delta1, \Delta1, \Delta1, \Delta2,\Delta2,\Delta2,\Delta2,\Delta3,\Delta3,\Delta3,\Delta3, 0,0]$$
+
+But there's another issue. Notice what happens when error is -ve and plaintext is 0. The multiplication wraps arounds and brings some part of half window corresponding to 0 from top coefficients to lowest coefficients, thus negating the terms. To avoid resulting value to be -ve of what it must be, for the half window stored in top coefficient we should encode their negative representations.
+
+$$[0,0,\Delta1, \Delta1, \Delta1, \Delta1, \Delta2,\Delta2,\Delta2,\Delta2,\Delta3,\Delta3,\Delta3,\Delta3, -0,-0]$$
+
+Notice that uptill now we encoded the identity function. That is, for any given plaintext we encoded the plaintext itself, $f(x) = x$. Moreover, we can change the function to any arbitrary function $f(x)$ that maps input plaintext to output plaintext. This is known as programmable bootstrapping (PBS). 
+
+>Note
+> $f(x)$ maps any input plaintext to any output plaintext as long the parameters are suitable with output plaintext. This implies, with bootstrapping one can change the plaintext space as well. 
+
+
+However, we still aren't done. Notice that $\mu$ can be in range $0 < \mu < N$ or in range $N <= \mu < 2N$. If it is former, then our multiplication by $v(x)$ works as expected and we obtain correct encoded plaintext value as constant term. However if it is in latter range then we obtain -ve of $k^{th}$ coefficient where $k = \mu - N$. This is because for $\mu > N$, $v(x)$ wraps around thus negating the terms. One way to avoid this is to force $\mu$ to be in range $0 <= \mu < N$ and doing requires reserving a bit of plaintext as a padding bit. Thus, after padding bit, the plaintext is restricted to half of what is was before. 
+
+> Note
+> With padding bit $\mu$ is not always restricted in range $0 <= \mu < N$. It may be -ve, but only when plaintext corresponds to 0 and we accommodate for that by encoding half window corresponding to plaintext 0 in top slots. 
+
+
+> Note
+> Multiplication $X^{-\mu}v(x)$ can be generalised as
+> $X^{-\mu} \cdot v(x) = (-1^{\text{floor}(\mu/N)}) \cdot X^{-(\mu \mod N)}$
+
+## Negacylic functions
+
+These are class of functions such that $f(x+\frac{p}{2}) = -f(x)$. 
+
+For ex, let $p = 2$ . Notice that function $f(x) = x$ is negacylic. 
+
+The benefit of negacylic functions is that, unlike general functions, one does not need to reserve padding bit. The reason for this is when $\mu$ is in range $N <= \mu < 2N$ the resulting constant term coefficient is -ve of $k^{th}$ coefficient where $k + N = \mu$. But if -ve of k^th coefficient is the desired value, then $X^{-b}v(x)$ result into polynomial with expected plaintext value in constant term. This will be the case when any plaintext maps to a value that is negative of what a plaintext halfway across it maps to (Notice that $N$ equates to $p/2$ in plaintext space).
+
+>TODO
+>Explanation above becomes clearer with torus. Add one here.
 
 ## Blind rotation
 
@@ -662,3 +706,39 @@ $$GLWE(x \cdot a) = GGSW(x) \cdot GLWE(a)$$
 
 %%To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
 $$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$%%
+
+
+**Extra boostrapping** 
+During bootstrapping we construct a polynomial as: 
+$$X^{-b + \sum{a_is_i}}$$
+and then multiply it with test polynomial $v(x) \in R_q$, that is
+$$X^{-\mu} \cdot v(x)$$
+The output polynomial rotates $v(x)$ by $-\mu$. Test vector polynomial $v(x)$ is constructed such that desired plaintext value is obtained in constant term of output polynomial after rotation. 
+
+> **Note**
+> Since $R_q = Z_q/X^N+1$, polynomial has order $2N$ and $X^{-\mu} = X^{2N - \mu}$
+
+Notice that if $0 \leq \mu \leq N$, then $X^{-\mu} \cdot v(x)$ outputs $\mu^{th}$ coefficient of $v(x)$. 
+
+However when $N \leq \mu \leq 2N$, $X^{-\mu} \cdot v(x)$  outputs $-(\mu - N)^{th}$ coefficient of $v(x)$. This is because $\mu = N + k$ and due to negacyclic property of $R_q$ multiplication by $X^N$ wraps around and negates the coefficients. 
+
+To generalise: 
+$$X^{-\mu} \cdot v(x) = (-1^{\text{floor}(\mu/N)}) \cdot X^{-(\mu \mod N)}$$
+
+Moreover, observe that in $v(x)$ we can only encode $N$ elements and the rest are obtained as negative of the encoded elements. This implies bootstrapping natively suits only a certain class functions: $f(x + p/2) = -f(x)$ (where p is input space; plaintext space). Such functions are called negacyclic functions. (Note:  $p$ and $N$ are interchangeable in context of the function $f(x)$ because LWE ciphertext is modulus switched from $q \rightarrow 2N$ as $\text{round}(2N \cdot ct) \mod 2N$ to maintain periodicity).
+
+To encode general functions in test polynomial (& identity function itself) it must be assured that $\mu \leq N$. In practice this is achieved by setting the first bit of plaintext space to 0. This has a consequence that plaintext space is now halved and there are solutions proposed, such as WoPBS, to get around this problem. 
+
+Constructing test vector
+In practice test polynomial is constructed as (we view polynomial with coefficient vector): 
+1. Construct vector $m$ consisting of all possible values in message space $[0, 2^M)$, as:
+   $$[0,..,2^M-1]$$
+2. Divide N into $b$ blocks where $b = N/(2^M)$ and fill each block with repeated values of values in $m$ (this corresponds to mapping same noiseless values over the error range). 
+   $$[0,0,0,0,1,1,1,1,...,2^M-1]$$ where $b = 4$.
+3. Slice half of block corresponding to 0, negate its values and append it at the end. 
+4. Encode the resulting coefficient as a plaintext, since we view them as a valid GLWE ciphertext. This means multiply each value by $\Delta$.
+
+Note that replacing vector $m$ with an output of a function, turns bootstrapping into programmable bootstrapping (PBS). That is for function $f(x) | x \in [0, 2^M)$, construct $m$ as
+$$m = [f(0), f(1), ..., f(2^M-1)]$$
+
+It is worth noting that bootstrapping is PBS with identity function. 
