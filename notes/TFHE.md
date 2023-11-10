@@ -326,28 +326,6 @@ Since $c$ can either be 0 or 1, $out$ will be GLWE encryption of $m_1$ if $c=1$,
 
 Bootstrapping takes in a noisy LWE ciphertext and homomorphically runs the decryption procedure to product a fresh LWE ciphertext with fixed (& reduced) noise. 
 
-
-
-## Sample Extraction GLWE to LWE
-
-Given a GLWE ciphertext $ct_{glwe} \in (\mathbb{Z}_{N,q})^{k+1}$ extracts LWE $ct_{lwe} \in \mathbb{Z}^{kN+1}$ ciphertext of sample at $n^{th}$ index.
-
-Notice that is $ct_{glwe}$ decryted with: 
-$$ b - \sum_{i=0}^{k-1} a_is_i$$
-where $b, a_i, s_i \in \mathbb{Z_{N,q}}$.
-
-Thus value of sample at index $n$ is equal to
-$$m_n =  b_n - \sum_{i=0}^{k-1} \sum_{x=0}^n s_{(i)x}a_{(i)n-x} - (\sum_{j=n+1}^{N-1}s_{(i)j}a_{(i)N+n-j})$$
-
-Let $sk_{lwe} = [s_0[0], ..., s_0[N-1], ..., s_{k-1}[0], ..., s_{k-1}[N-1]]$. 
-
-To construct LWE sample encrypting $m_n$ under $sk_{lwe}$, set $ct_{lwe} = (b', a')$ where, 
-$b' = b_n$
-$a' = [\sum a_{(i)n},\sum a_{(i)n-1}, ..., \sum a_{(i)0}, \sum -a_{(i)N-1}, -\sum a_{(i)N-2}, ..., \sum -a_{(i)n+1}]$
-
-
-For implementation refer to glw_sample_extraction of tfhe-rs.
-
 ## Intuition
 
 Recall that decryption of LWE ciphertext is defined as:
@@ -427,31 +405,94 @@ The benefit of negacylic functions is that, unlike general functions, one does n
 >TODO
 >Explanation above becomes clearer with torus. Add one here.
 
+For example, let $p = 4$ and $N = 16$ and define a negacylic function $f(x)$. Then we may construct $v(x)$ as
+$$
+[\Delta f(0), \Delta f(0), \Delta f(0), \Delta f(1),\Delta f(1),\Delta f(1),\Delta f(1),\Delta f(1),\Delta f(1), \Delta f(1), \Delta f(1), \Delta f(1), \Delta f(2), \Delta f(2), \Delta f(2)]
+$$
+
+TODO: explain the rotations using torus.
+
 ## Blind rotation
 
-Blind rotation simply equates to calculating $X^{-\mu} v(x)$ homomorphically. 
+Once we have constructed the test vector polynomial $v(x)$ it is now time to rotate it blindly. This means somehow calculating $X^{-\mu}$ homomorphically instead of in plaintext as we did before. 
 
-Once we have constructed test polynomial $v(x)$ correctly, we can repeatedly use CMUX operations to perform blind rotations. Recall that CMUX operation is as: 
+We will need to define a bunch of things for this. First is a GLWE secret key $sk_{g} \in B_{N,q}$. Then we will require a GGSW encryptions of secret bits in LWE secret key $s \in Z^n_q$. 
+$$
+[GGSW_{sk_g}(s_0), GGSW_{sk_g}(s_1), ..., GGSW_{sk_g}(s_{n-1})]
+$$
 
-Given GGSW encryption of bit $b$ and two GLWE encryption, $a$ and $c$, CMUX operation outputs:
-$$o = CMUX(b, a, c)$$
-if $o == a$ if $b == 1$, c otherwise. 
+Meanwhile for clarity I should also define trivial GLWE encryption. A trivial GLWE encryption of a polynomial $B \in Z_{N,q}$ is 
+$$(A, A, A, ..., B)$$
+where $A$ is zero polynomial. In simple terms, we set polynomial $B$ as the $b$ component of GLWE ciphertext. 
 
-We start with trivial GLWE encryption of $v(x)$. This means we construct GLWE encryption of $v(x)$ as:
-$$ggsw_{sk} = GLWE(v(x)) = (0, 0,..., 0, v(x)) \in Z_{N,q}[X]^{k+1}$$
-We will additionally need GGSW encryptions of each bit of LWE secret key $s_{lwe}$, that is
-$$[GGSW(s_0), ..., GGSW(s_n)] \space for \space s_{lwe} = [s_0, ..., s_n]$$
-We perform blind rotation as: 
-```latex
-let acc = X^{-\hat{b}}GLWE(v(x))
+Given LWE ciphertext $ct = (a_0, a_1, ..., a_n , b)$, blind rotation proceeds as:
+1. Construct test polynomial v(x).
+2. Modulus switch $ct$ from ciphertext modulus q to 2N to produce $ct'$
+3. Produce trivial GLWE encryption of $X^{-b'}v(x)$ as $ct_{acc}$
+4. In sequence starting with 0 and ending with n, take $a_i$ and, GGSW ciphertext of its corresponding secret bit $s_i$, $GGSW_{sk_g}(s_i)$. Then calculate the following CMUX operation:
+   $$ct_{acc} = CMUX(GGSW_{sk_g}(s_i), ct_{acc} \cdot X^{a_i}, ct_{acc})$$
+5. After $n$ iterations $ct_{acc}$ is GLWE ciphertext with desired LWE plaintext value set as its constant term. 
+
+In pseudo code blind rotation can be summarised as:
+```rust
+// GLWE(v(x)) is trivial GLWE encryption of v(x)
+let acc = X^{-b'}GLWE(v(x))
 for i in 0..n { 
-	acc = CMUX(ggsw_sk, X^{\hat{a_i}}acc, acc)
+	acc = CMUX(ggsw[i], X^{a_i'}acc, acc)
 }
 ```
 
-Notice that we start with $X^{-\hat{b}}v(x)$ and $\hat{a_i}$ is only added to $-\hat{b}$ in the exponent if $s_i$ is 1, otherwise not. Thus we end up with GLWE encryption of $X^{-\hat\mu}v(x)$
+## Sample Extraction GLWE to LWE
 
-Notice that GLWE ciphertext $X^{-\hat\mu}v(x)$ encrypts desired value $\mu$ which corresponds to correct value in message space on the constant term. To extract the constant term as LWE ciphertext from GLWE ciphertext we use sample extraction with $0^th$ term.
+After blind rotation we are left with GLWE ciphertext $ct_{acc}$ that encrypts the desired LWE plaintext in its constant term. To complete the bootstrapping procedure we need a way to extract the constant term in its own LWE ciphertext. 
+
+First, let's understand sample extraction in general after which the trick of extracting the constant term may become obvious. 
+
+### Sample extraction 
+
+If one observes the decryption of GLWE ciphertext well enough, they may notice that it equates to decryption of $N$ LWE ciphertexts (each coefficient is a LWE ciphertext in itself) with the same secret key and mask values but in different orders (due to negacylic property of multiplication).
+
+For example, given a GLWE ciphertext $ct = [A_0, A_1, ..., A_{k-1}, B]$ and corresponding secret key $sk_g = [S_0, ..., S_{k-1}]$. We can decrypt $ct$ as:
+$$
+D = B - \sum A_iS_i
+$$
+Now let's narrow down to what goes inside calculating $i^{th}$ coefficient of $D$: 
+$$
+D[i] = B[i] - \sum_{l=0}^{k-1}(\sum_{j=0}^{i} S_l[j]A_l[i-j] \quad - \sum_{j=i+1}^{N-1} S_l[j]A_l[N+i-j] \quad)
+$$
+
+Above equation implies that one may re-write LWE ciphertext of $i^{th}$ plaintext coeffficient as: 
+$$
+[A_0[i], A_0[i-1], ..., A_0[0], -A_0[N-1], ..., -A_0[i+1], A_1[i], ..., -A_{k-1}[i+1],B[i]] \in Z^{Nk+1}_q
+$$
+To decrypt LWE ciphertext of $i^{th}$ coefficient, one can reinterpret GLWE secret key $sk_g$ as LWE secret key as:
+$$
+[S_0[0], ..., S_0[N-1], S_1[0], ..., S_{k-1}[N-1]] \in Z^{Nk}_q
+$$
+
+### Extracting constant term as LWE ciphertext
+
+Given the general way to extract a coefficient in GLWE ciphertext, one can easily extract $0^{th}$ coefficient. This is exactly how we extract the constant term of $ct_{acc}$ GLWE ciphertext. Extraction produces a LWE ciphertext $ct_{lwe-acc}$ with corresponding LWE secret equivalent to GLWE secret key $ct_g$ re-interpreted as LWE secret key.
+
+## Key switching from bigger LWE s' to s
+
+After extracting the constant term from accumulator GLWE ciphertext into its own LWE ciphertext, we are just left with key switching the LWE ciphertext from $s'$ ($s'$ is GLWE secret key $sk_g$ re-interpreted as LWE secret key) to $s$.
+
+The procedure to do so is same the key switching described in LWE section. Key switching produces a refreshed LWE ciphertext with reduced noise and finishes the bootstrapping procedure. 
+
+## Bootstrapping key
+
+TODO: describe different components of bootstrapping key.
+
+--------
+
+
+
+
+
+
+
+
 
 
 
@@ -742,3 +783,31 @@ Note that replacing vector $m$ with an output of a function, turns bootstrapping
 $$m = [f(0), f(1), ..., f(2^M-1)]$$
 
 It is worth noting that bootstrapping is PBS with identity function. 
+
+
+**Blind rotation** 
+Blind rotation simply equates to calculating $X^{-\mu} v(x)$ homomorphically. 
+
+Once we have constructed test polynomial $v(x)$ correctly, we can repeatedly use CMUX operations to perform blind rotations. Recall that CMUX operation is as: 
+
+Given GGSW encryption of bit $b$ and two GLWE encryption, $a$ and $c$, CMUX operation outputs:
+$$o = CMUX(b, a, c)$$
+if $o == a$ if $b == 1$, c otherwise. 
+
+We start with trivial GLWE encryption of $v(x)$. This means we construct GLWE encryption of $v(x)$ as:
+$$ggsw_{sk} = GLWE(v(x)) = (0, 0,..., 0, v(x)) \in Z_{N,q}[X]^{k+1}$$
+We will additionally need GGSW encryptions of each bit of LWE secret key $s_{lwe}$, that is
+$$[GGSW(s_0), ..., GGSW(s_n)] \space for \space s_{lwe} = [s_0, ..., s_n]$$
+We perform blind rotation as: 
+```latex
+let acc = X^{-\hat{b}}GLWE(v(x))
+for i in 0..n { 
+	acc = CMUX(ggsw_sk, X^{\hat{a_i}}acc, acc)
+}
+```
+
+Notice that we start with $X^{-\hat{b}}v(x)$ and $\hat{a_i}$ is only added to $-\hat{b}$ in the exponent if $s_i$ is 1, otherwise not. Thus we end up with GLWE encryption of $X^{-\hat\mu}v(x)$
+
+Notice that GLWE ciphertext $X^{-\hat\mu}v(x)$ encrypts desired value $\mu$ which corresponds to correct value in message space on the constant term. To extract the constant term as LWE ciphertext from GLWE ciphertext we use sample extraction with $0^th$ term.
+
+
