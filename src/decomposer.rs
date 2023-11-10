@@ -53,7 +53,7 @@ impl SignedDecomposer {
         for l in 0..(self.params.log_q / self.params.log_base) {
             let mut res = ((value >> (log_base * l)) & base_mask) + carry;
 
-            // will carry mask will equal base_by_2_mask only when res >= B/2, otherwise 0
+            // carry mask will equal base_by_2_mask only when res >= B/2, otherwise 0
             let carry_mask = res & base_by_2_mask;
 
             // subtract B from ` only when res >= B/2

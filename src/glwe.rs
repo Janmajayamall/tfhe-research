@@ -305,9 +305,4 @@ mod tests {
             decompose_glwe_ciphertext(&glwe_ciphertext, &signed_decomposer);
         dbg!(decomposed_glwe_ciphertext);
     }
-
-    #[test]
-    fn glwe_monomial_mul_works() {
-        // TODO: this will require implementation of poly_monomial with non-native (modulus 1<<log_p to be exact) modulus to check correctness. Delaying this for now.
-    }
 }

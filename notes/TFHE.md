@@ -2,21 +2,31 @@
 
 ## Params
 
-An LWE scheme is instantiated with params q,n,p,$\sigma$,$\mu$, where q > p and p | q. q defines the ciphertext modulus, p defines plaintext modulus. For ease both q and p are chosen as power of 2.
+An LWE scheme is instantiated with params $q,n,p,\sigma_l$ where $q >> p$ and $p \vert q$. 
+
+$q$ is the ciphertext modulus, $p$ is the plaintext modulus. For ease both $q$ and $p$ are chosen as power of 2.
+
+Note: most CPU based implementations set $q$ to $2^{64}$ or $2^{32}$. This is convenient because word-size of modern cpus are either 32 bits or 64 bits. 
 
 ## Encoding
 
-A cleartext value $m$ is encoded as plaintext using encoding
-$\Delta (m \mod p)$. 
+A cleartext value $m$ is encoded as plaintext with encoding
 
-Notice that this results in having $log(q) - log(p)$ bits for noise growth.
+$\Delta (m \mod p)$ 
+
+where $\Delta = q/p$
+
+Notice that this roughly gives $log(q) - log(p)$ bits for noise growth.
+
 ## Encryption
 
 First sample secret key $sk \leftarrow \mathbb{B}^n$
 
 Encode message $m \in Z_p$ as plaintext $pt = \Delta m$
 
-Ciphertext $ct \in \mathbb{Z}_q^{n+1}$ for plaintext $pt$ with secret key $sk$ is calculated as
+Sample $e \leftarrow \chi^n$  
+
+Output ciphertext $ct \in \mathbb{Z}_q^{n+1}$ for plaintext $pt$ with secret key $sk$:
 $$ct = (a_0, a_1, ..., a_{n-1}, b) | (a_0, a_1, ..., a_{n-1}) \leftarrow \mathbb{Z}_q, b = \sum_{i=0}^{n-1} a_is_i + e$$
 
 ## LWE to TLWE
@@ -27,48 +37,169 @@ Any element $a \in \mathbb{T}_q$ can be written as
 $$a = q^{-1} a'$$ where $a' \in \mathbb{Z}_q$.
 
 
+# Ring Polynomials
+
+## Cyclotomic polynomials
+
+$M^{th}$ cyclotomic polynomial is defined as:
+
+$$
+\Phi_M = \prod_{\zeta_i \in P(M)} X - \zeta_i
+$$
+
+where $P(M)$ is set of primitive $M^{th}$ roots of unity. 
+
+The class of cyclotomic polynomials of interest to are where $M$ is some power of 2. 
+
+Observe that due to the following theorem: 
+
+For any positive integer $n >= 1$ and k s.t. $k | n$, 
+$$
+\Phi_{nk}(x) = \Phi_{n}(x^k) 
+$$
+I wouldn't add a proof here, but will refer you to the following [link](). 
+
+We can re-write $M^{th}$ cyclotomic polynomial as: 
+$$
+\Phi_{M}(x) = \Phi_{M/2}(x^2) 
+$$
+
+Given M is some power of $2^m$, we can write:
+$$
+\Phi_{M}(x) = \Phi_{2}(x^{M-1})
+$$
+since, 
+$$
+\Phi_{2}(x) = X^2+1
+$$
+we can write M^th cyclotomic polynomial as
+$$
+\Phi_{M}(x) = \Phi_{2}(x^{M/2})
+$$
+Let $N = M/2$. Thus, 
+$$
+\Phi_{M}(x) = \Phi_{2}(x^{N}) = X^N+1
+$$
+
+
+## Why negacylic polynomials
+
+The reason why we are interested in only cyclotomic polynomials that are some power of 2 is because they can be used to construct ring such as $Z_{N,q} = Z_q / X^N + 1$. Polynomials in such rings are known as negacylic polnyomials. 
+
+> *Note*: 
+> I don't know why do we use X^N+1 instead of X^N-1. But this can be because rings formed using [X^N+1 are considered more secure than X^N-1](https://jeremykun.com/2022/12/09/negacyclic-polynomial-multiplication/).
+
+One special thing about polynomials in ring $Z_{N,q}$ is that multiplications wraps around and when they do the coefficients are negated. 
+
+For example, 
+TODO
+
+## LWE to RingLWE
+
+Due to negacylic property of ring polynomial $Z_{N,q}$ polynomial multiplication between two polynomials $A, B \in Z_{N,q}$ and adding polynomial $E \in Z_{N,\chi}$ where $q$ is ciphertext modulus is equivalent to N LWE ciphertexts. 
+
+TODO: show a diagram
+
+Since one can calculate $A \cdot B$ in O(N log N) using NTT, encryption using RingLWE is more efficient than encrypting $N$ LWE ciphertexts. 
+
+RingLWE packs plaintexts more tightly than LWE ciphertexts. For ex, to encrypt $N$ plaintexts RingLWE requires two polynomials (each with $N$ values $\in Z_q$), whereas LWE requires $N$ LWE ciphertexts.
+
 
 # GLWE
 
-Note that RLWE and GLWE are same.
+Note: RLWE is equivalent to GLWE when GLWE dimension is set to 1
+
+GLWE is parameterised $q,p,N,k, \sigma_g$. $Z_{N, q}$ is ciphertext polynomial ring and $Z_{N,p}$ is plaintext polynomial ring, and $k$ is GLWE dimension. 
 
 ## Encryption
 
-Sample secret key $sk = [s_0, ...,s_{k-1}]$ as list of $k$ polynomials $\in \mathbb{Z}_{N, q}$ with binary coefficients. 
+To encrypt plaintext $pt \in Z_{N,p}$.
 
-Sample $e$ as a polynomial $\in \mathbb{Z}_{N,q}$ with each coefficient sampled from gaussian distribution $N(\sigma^2, \mu)$.
+Sample secret key $sk = [s_0, ...,s_{k-1}]$ as list of $k$ polynomials $\in \mathbb{B}_{N, q}$. 
 
-Encrypt plaintext $pt$ as
+Sample $e$ as a polynomial $\in \mathbb{Z}_{N,q}$ with each coefficient sampled from distribution $\chi_{\sigma_g}$.
+
+Output ciphertext $ct \in (\mathbb{Z}_{N,q})^{k+1}$ as
 $$ct = (a_0, a_1, a_2,..., a_{k-1},b) | \space  (a_0, a_1, a_2,..., a_{k-1}) \leftarrow (\mathbb{Z}_q/(X^N + 1))^k, \space b = \sum_{i=0}^{k-1} a_is_i + e + pt$$
-$ct \in (\mathbb{Z}_{N,q})^{k+1}$
 
+## Key Switching
+
+Key Switching switches an LWE ciphertext encrypted under $s'$ to encryption under $s$.
+
+Recall to decrypt an LWE ciphertext $ct = (a_0, ..., a_{n-1}, b)$ encrypted using s' one must perform:
+$$\Delta(m) + e = b - \sum_{i=0}^{n-1}a_is'_i$$
+To key switch $ct$ from an encryption under $s'$ to encryption under $s$, the idea is to calculate decryption procedure homomorphically. However doing so naively will require multiplying $a_i$ with LWE encryptions of $s'_i$ and, due to $a_i$ being in $Z_q$, will cause error in $LWE(s'_i)$ to blow up. Key switching procedure gets around this by decomposing $a_i$ using small base $\beta$ and encrypting corresponding $s_i$ scaled by recomposition factors in multiple LWE ciphertext.  
+
+### Digit decomposition
+
+Given a base $\beta$ and levels $l$ we construct the following gadget matrix: 
+$$G = [\frac{q}{\beta},...,\frac{q}{\beta^l}]$$
+Then we decompose $a \in Z_q$ as: 
+$$G^{-1}(a) = [a_0,...,a_{l-1}]$$
+where $a_0$ is most significant $log(\beta)$ bits of $a$, $a_1$ is next $\log{\beta}$, and so on and so forth.
+
+Observer that we can reconstruct $a$ upto $l$ level accuracy as
+$$a = G^{-1}(a)G^{T}$$
+In practice we choose $\beta * l$ smaller than $q$ and safely ignore least significant bits of ciphertexts since they consist of noise. 
+
+### Key Switching Key
+
+Key switching requires a key switching key. Key switching key consist of LWE encryptions of bits in $s'$. 
+
+Notice that $s'_i$ must be encrypted such that when its LWE ciphertexts are multiplied with vector $G^{-1}(a_i)$ of its corresponding $a_i$ it must result in LWE ciphertext encrypting $a_is_i'$. Thus we produce $l$ LWE ciphertexts of $s'_i$ as: 
+$$[LWE(\frac{q}{\beta}s',s),...,LWE(\frac{q}{\beta^l}s', s)]$$
+
+Notice that to encrypt we use a different LWE secret key $s$, which is the secret key we want to switch to.
+
+Key switching key $ksk_{s' \rightarrow s}$ consist of $l \cdot n$ LWE ciphertexts. 
+
+### Key Switching Procedure
+
+With $ksk_{s' \rightarrow s}$ and LWE ciphertext $ct = (b, [a_0, ..., a_{n-1}])$, first decompose each $a_i$ using digit decomposition:
+$$G^{-1}(a_i) = [a_{i,0},...,a_{i,l-1}]$$
+
+Now calculate: 
+$$LWE_s(m) = (0,...0, b') - \sum_{i=0}^{n-1} G^{-1}(a_i)\cdot ksk_{s' \rightarrow s}[i]^T$$
+
+Where, 
+$$
+LWE_s(a_i, s_i) = G^{-1}(a_i)\cdot ksk_{s' \rightarrow s}[i]^T
+$$
+calculates inner product of $a_i$ and $s_i$ homomorphically.
+
+Notice that since $a_{i,j}$ has norm of atmost $|\beta|$ it only scales error term in LWE ciphertext of secret bits by $|\beta|$ which is a lot smaller than norm of ciphertext modulus $q$.
+
+> *Note*
+> We use key switching in bootstrapping to switch LWE ciphertext extracted in sample extraction from encryption under $s' \in \mathbb{B}^{kN}$ (i.e. GLWE secret key interpreted as LWE secret key) to encryption under $s \in \mathbb{B}^n$. This implies $ksk_{s' \rightarrow s}$ can be viewed as 2D matrix $kNl$ rows with each row an LWE ciphertext. Thus, $ksk \in (\mathbb{Z}^{n+1}_q)^{(kN \cdot l)}$ 
 
 # GGSW
 
-GGSW is collection of GLWE encryptions. 
+One cannot multiply an GLWE ciphertext with another without blowing up the noise. 
+
+Generally, in other schemes like BFV, BGV (where only RLWE is used) a bigger ciphertext modulus is used for noise accumulation which is further carefully kept under control. Instead TFHE uses flattening approach to multiply a masked message $m$ with a GLWE ciphertext.
+
+The trick is to decompose GLWE ciphertext to reduce their norm and multiply it with a GGSW ciphertext (defined below) that recomposes polynomials in GLWE ciphertext, thus keeping noise under control.
 
 ## Gadget matrix
 
-Define decomposition base $\beta$ and decomposition level $l$. Note that for accuracy $\beta^l = q$, where $q$ is ciphertext modulus. 
-Define gaget matrix $G$ as
+Let decomposition base be $\beta$ and let no. of decomposition level be $l$. We define a gadget matrix $G^T$ with dimension $(l(k+1)) \times (k+1)$ as:
 $$G^T = \begin{pmatrix}
-    \beta^{l-1} & \cdots & \cdots \\
+    \frac{q}{\beta} & \cdots & \cdots \\
     \vdots & \cdots & \cdots  \\
-    \beta^{1} & \cdots & \cdots\\
+    \frac{q}{\beta^l} & \cdots & \cdots\\
     \vdots & \cdots & \cdots \\
     & \cdots  & \cdots \\
     & \ddots & \\
-     \cdots & \cdots& \beta^{l-1} & \\
+     \cdots & \cdots & \frac{q}{\beta} & \\
      \cdots & \cdots & \vdots   \\
-    \cdots & \cdots& \beta^{1} & \\
+    \cdots & \cdots& \frac{q}{\beta^l} & \\
 \end{pmatrix}$$
 
-where $G^T \in \mathbb{Z_q}^{l(k+1) \cdot (k+1)}$
+Each element in $G^T$ is $\in Z_q$ and can be interpreted as a constant polynomial $\in Z_{N,q}$. Thus we can write $G^T \in \mathbb{Z}_{N,q}[X]^{l(k+1) \cdot (k+1)}$.
 
-It should be noted that each element in gadget matrix is a constant polynomial. Thus we can write $G^T \in \mathbb{Z_{N,q}[X]}^{l(k+1) \cdot (k+1)}$.
-## Encryption
+## GGSW Ciphertext
 
-To encrypt message $m \in \mathbb{Z}_{N,p}$, first construct $\pi$ as a column vector with (k+1) rows consisting of GLWE encryptions of 0 under GLWE $sk$.
+To encrypt message $m \in Z_{N,q}[X]$, we first calculate $mG^T$, then we add $mG^T$ to $\pi$. $\pi$ is a matrix of size $(l(k+1)) \times (k+1)$ with each row a zero GLWE encryption. 
 
 $$\pi = \begin{pmatrix}
     GLWE_{sk}(0) \\
@@ -76,44 +207,77 @@ $$\pi = \begin{pmatrix}
 	\vdots \\
     GLWE_{sk}(0) \\
 \end{pmatrix} = \begin{pmatrix}
-    a_{00}, a_{01}, ..., a_{0(k-1)}, b_0 \\
-    a_{10}, a_{11}, ..., a_{1(k-1)}, b_1 \\
+    a_{0,0}, a_{0,1}, ..., a_{0,(k-1)}, b_0 \\
+    a_{1,0}, a_{1,1}, ..., a_{1,(k-1)}, b_1 \\
 	\vdots \\
-    a_{(lk)0}, a_{(lk)1}, ..., a_{(lk)(k-1)}, b_{lk} \\
+    a_{(lk),0}, a_{(lk),1}, ..., a_{(lk),(k-1)}, b_{lk} \\
 \end{pmatrix} \in \mathbb{Z}_{N,q}[X]^{(k+1)l \cdot (k+1)}$$
 
-Then encrypt $m$ as 
+>Note
+>$mG^T$ translates to multiplying each constant polynomial in gadget matrix $G^T$ with $m$
 
-$GGSW(m) = \pi + mG^T$
+Since, 
+$$mG^T = \begin{pmatrix}
+    m\frac{q}{\beta} & \cdots & \cdots \\
+    \vdots & \cdots & \cdots  \\
+    m\frac{q}{\beta^l} & \cdots & \cdots\\
+    \vdots & \cdots & \cdots \\
+    & \cdots  & \cdots \\
+    & \ddots & \\
+     \cdots & \cdots & m\frac{q}{\beta} & \\
+     \cdots & \cdots & \vdots   \\
+    \cdots & \cdots& m\frac{q}{\beta^l} & \\
+\end{pmatrix}$$
+
+$$
+\pi + mG^T = \begin{pmatrix}
+    a_{0,0} + m\frac{q}{\beta}, a_{0,1}, ..., a_{0,(k-1)}, b_0 \\
+    a_{1,0} + m\frac{q}{\beta^2}, a_{1,1}, ..., a_{1,(k-1)}, b_1 \\
+	\vdots \\
+    a_{(lk),0}, a_{(lk),1}, ..., a_{(lk),(k-1)}, b_{lk} + m\frac{q}{\beta^l} \\
+\end{pmatrix}
+$$
 
 
 ## External product
 
-We can multiply GLWE  encryption of $m_1$ with GGSW encryption of $m_2$ to get GLWE encryption of $m_1m_2$.
+Given $GLWE_{sk}(m_1)$ and $GGSW_{sk}(m_2)$ one can calculate their external product to produce $GLWE_{sk}(m_1m_2)$.
 
-Note that GLWE $sk$ must be same for both.
+First, decompose $GLWE_{sk}(m_1) = (a_0, a_1, ..., b)$ to produce $l \cdot (k+1)$ polynomials as $$G^{-1}(GLWE_sk(m_1))=[a_{0,0}, a_{0,1}, ..., a_{0,l-1}, ..., b_{0}, ..., b_{l-1}]$$
+> *Note*
+> chunk $[a_{i,0}, a_{i,1}, ..., a_{i,l-1}]$ is decomposition of polynomial $a_i$
 
-Also note that there exist a function $G^{-1}$ that produces row vector of size $(k+1)l$ which is inverse of $ct_{glwe}$ such that  for a given GLWE ciphertext $G^{-1}(ct_{glwe})G^T = ct_{glwe}$.
-
-More concretely $G^{-1}$ decomposes each of $k+1$ polynomials in $ct_{glwe} = (a_0, .., a_{k-1}, b)$ into $l$ polynomials with decomposition base $\beta$, thus producing a row vector of size $(k+1)l$ as:
-$$[a_{00}, a_{01},..., a_{0{l-1}}, a_{10}, ..., a_{1{l-1}}, ..., b_{0}, ..., b_{l-1}]$$
-
-You can think of $G^T$ consisting of recomposition values for each of the decomposed polynomials in $G^{-1}$. For example, recomposition for polynomial $a_0$ is:
-$$\sum_{i=0}^{l-1} a_{0i}\beta^{l-{i+1}}$$
-where $\beta^{l-{i+1}}$ values are from the first column of $G^T$. 
-
-
-External product is calculated as: 
-$$ct_{ggsw} \cdot ct_{glwe} = G^{-1}(ct_{glwe}) (\pi + m_2G^T) = G^{-1}(ct_{glwe})\pi + G^{-1}(ct_{glwe})mG^T = GLWE(0) + GLWE(m_1m_2)$$
-
-$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = G^{-1}(ct_{glwe}) (\pi + m_2G^T)$$
-$$= G^{-1}(ct_{glwe}(m_1))\pi + m_2G^{-1}(ct_{glwe}(m_2))G^T$$
-$$=\pi + m_2ct_{glwe}(m_1)$$
-Since $ct_{glwe}(m_1) = \Delta m_1 + e$ and $\pi$ is encryption of 0.
-$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = \Delta m_2m_1 + m_2e$$
+Then calculate the external product as: 
+$$
+\\ G^{-1}(GLWE_{sk}(m_1)) \cdot GGSW_{sk}(m_2)
+\\ = G^{-1}(GLWE_{sk}(m_1)) \cdot \pi + G^{-1}(GLWE_{sk}(m_1)) \cdot m_2G^T \\
+\\ = 0 + GLWE_{sk}(m_2m_1) = GLWE_{sk}(m_2m_1)
+$$
 
 
-TODO: Stop assuming $\beta^l = q$ and rewrite the equations. 
+### Why does it work?
+
+Think of external product as:
+$$
+[a_{0,0}, a_{0,1}, ..., a_{0,l-1}, ..., b_{0}, ..., b_{l-1}] \times \begin{pmatrix}
+    a'_{0,0} + m_2\frac{q}{\beta}, a'_{0,1}, ..., a'_{0,(k-1)}, b_0 \\
+    a'_{1,0} + m_2\frac{q}{\beta^2}, a'_{1,1}, ..., a'_{1,(k-1)}, b_1 \\
+	\vdots \\
+    a'_{(lk),0}, a'_{(lk),1}, ..., a'_{(lk),(k-1)}, b'_{lk} + m_2\frac{q}{\beta^l} \\
+\end{pmatrix}
+$$
+
+The $i^{th}$ column, where $i \lt k$, calculates the inner product: 
+$$
+\sum_{j=il}^{i(l+1)-1}(a_{i,j}a'_{j,i} + a_{i,j}m_2\frac{q}{\beta^{j+1}}) \\
++ \sum_{j=0, j\neq[il, i(l+1)-1]}^{l\cdot(k-1)-1} a_{j/l,j \mod l}a'_{j,i} + a_{0,j}m\frac{q}{\beta^{j+1}}) \\ 
++ \sum_{j=l\cdot(k-1)-1}^{l\cdot(k)-1} b_{j \mod l}a'_{j,i}
+$$
+
+The latter two parts of the summation sum to zero encryption. The first part consist of zero encryption (i.e. $\sum a_{i,j}a'_{j,i}$) and recomposes $a_{j}$ while multiplying it with $m_2$ (i.e $\sum m_2\cdot a_{i,j}\frac{q}{\beta^{j+1}})$). This results in polynomial $i^{th}$ mask component of resulting GLWE encryption of $m_1m_2$.
+
+Same applies for the last column which recomposes $b$ component of $GLWE(m_1)$ while multiplying it with $m_2$, thus resulting in $b$ component of new GLWE ciphertext encrypt $m_1m_2$.
+
 
 ## GLEV and GGSW
 
@@ -142,22 +306,21 @@ $$=\sum GLWE(-S_ia_im_2) + GLWE(bm_2) = GLWE(\Delta m_1m_2 )$$
 
 The only good reason that I am able to come up with for using GLEV approach over normal approach is that GLEV requires $l(k+1)$ multiplication in $Z_{N,q}$ whereas normal approach requires $l(k+1) \times (k+1)$ multiplications (normal approach multiplies row vector with a matrix).
 
-## Ciphertext Multiplication
 
-You can easily multiply a GLWE ciphertext with a scalar by multiplying polynomial with the scalar. However, multiplications between two ciphertexts is not trivial. This is because internal product over Torus is not defined, you need to use external product. 
 
-Let $x \in \mathbb{Z}$ and $a \in \mathbb{T}$. External product between $x$ and $a$ is defined as
-$$x \cdot a = a + a + ... + a \space (x \ times)$$
 
-We cannot port this definition directly to encrypted context. In other words, we can cannot add a given GLWE ciphertext by itself $x$ no. of times, where $x$ itself is unknown. To perform ciphertext multiplication between $x \in \mathbb{Z}_{N}[X]$ and $a \in \mathbb{Z}_{N,q}[X]$ we must first encrypt $a$ under GLWE and $x$ under GGSW. Result of their external product equals GLWE encryption of $x \cdot a$, that is 
-$$GLWE(x \cdot a) = GGSW(x) \cdot GLWE(a)$$
+# CMUX
 
-%%To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
-$$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$%%
+Once we have GGSW ciphertext, CMUX operation becomes really easy to define. The core idea of cmux is to calculate 2 input multiplexer homomorphically as: 
+$$c \cdot (m_1-m_2) + m_2$$
+where $c$ is indicator bit and $m_1, m_2$ are messages. 
 
-## CMUX
+Define $c \in [0,1]$ and encrypt it as a GGSW ciphertext: $GGSW_{sk}(c)$. Given two GLWE ciphertexts $GLWE_{sk}(m_1)$ and $GLWE_{sk}(m_2)$ calculate: 
+$$m = GLWE_{sk}(m_1) - GLWE_{sk}(m_2)$$
+$$out = \text{ExternalProduct}(GGSW_{sk}(c),m) + GLWE_{sk}(m_2)$$
+Since $c$ can either be 0 or 1, $out$ will be GLWE encryption of $m_1$ if $c=1$, otherwise $m_2$.
 
-TODO
+
 
 # Bootstrapping
 
@@ -246,41 +409,6 @@ Notice that we start with $X^{-\hat{b}}v(x)$ and $\hat{a_i}$ is only added to $-
 
 Notice that GLWE ciphertext $X^{-\hat\mu}v(x)$ encrypts desired value $\mu$ which corresponds to correct value in message space on the constant term. To extract the constant term as LWE ciphertext from GLWE ciphertext we use sample extraction with $0^th$ term.
 
-## Key Switching
-
-Key Switching switches and LWE ciphertext encrypted under $s'$ to encryption under $s$.
-
-Given an LWE ciphertext $c = (a_0, ..., a_{n-1}, b)$ encrypted under $s'$ recall that decryption procedure as: 
-$$\Delta(m) + e = b - \sum_{i=0}^{n-1}a_is'_i$$
-The idea is to calculate the summation homomorphically using encryption of each bit of $s'$ under $s$. However, doing this naively will blow up the resulting noise since we multiply LWE encryption $LWE(s'_i)$ with a scalar in ciphertext space (ie $a_i \in Z_q$). To perform key switching while keeping noise growth under control we use digit decomposition. 
-
-### Digit decomposition
-
-Digit decomposition is implement using gadget decomposition matrix. Given a base $\beta$ and levels $l$ we construct the following gadget matrix: 
-$$G = [\beta^{l-1},...,\beta^{0}]$$
-Given base $\beta$ decomposition of $a \in Z_q$ as: 
-$$G^{-1}(a) = [a_0,...,a_{l-1}]$$
-where $a_i$ are extracted starting from most significant bits. For ex, $a_0$ corresponds to most significant $log(\beta)$ bits of $a$.
-
-We can reconstruct $a$ upto $l$ level accuracy as
-$$a = G^{-1}(a)G^{T}$$
-Note that in practice we choose $\beta * l$ smaller than $q$ and safely ignore LSBs since they consist of noise. 
-
-### Key Switching Key
-
-To perform key switching we require LWE encryption each bit of $s'$. To use digit decomposition and recomposition during key switching we decompose each bit in $s'$ and encrypt them. That is, 
-1. Decompose $s'_i$ using digit decomposition. Since $s_i$ is a bit, in practice this is omitted. 
-2. Given gadget row vector $G$, calculate $s'_iG = [s'_i\beta^{l-1}, ..., s'_i]$.
-3. Encrypt each element of $s'_iG$ using $s$. This produces $l$ LWE ciphertexts. 
-After encrypt all bits in $s'$ we obtain an 2D array of LWE ciphertext where $j^{th}$ column of $i^{th}$ row is an LWE encryption as $LWE_s(s'_i\beta^{l-{j+1}})$. Let's call this 2D array key switching key $ksk$.
-
-We then perform key switching for LWE encryption $LWE_{s'}(m) = (a'_0,...,b')$ as
-$$LWE_s(m) = (0,...0, b') - \sum_{i=0}^{n-1} G^{-1}(a_i')ksk[i]^T$$
-Notice that $G^{-1}(a_i')ksk[i]^T$ expands to 
-$$[a'_{i0},...,a_{i(n-1)}'][LWE_{s}(s'_i\beta^{l-1}),...,LWE_{s}(s'_i)]^T = LWE(a'_is_i)$$
-but without accumulating large noise since magnitude of each scalar value $a'_{il}$ is limited to base $\beta$.
-
-We use key switching in bootstrapping to switch LWE ciphertext extracted in sample extraction from encryption under $s' \in \mathbb{B}^{kN}$ to encryption under $s \in \mathbb{B}^n$. This means ksk will be a 2D matrix as $ksk \in (\mathbb{Z}^{n+1}_q)^{(kN \cdot l)}$ 
 
 
 ## Bootstrapping Step
@@ -309,57 +437,81 @@ Programmable bootstrapping follows the same procedure by filling in $m$ vector w
 
 ## Gadget vector
 
-For ciphertext space $q$, base $\beta$ and level $l$, we represent gadget vector as:
+For ciphertext modulus $q$, base $\beta$ and level $l$, we represent gadget vector as:
 $$g = [\frac{q}{\beta}, \frac{q}{\beta^2} ..., \frac{q}{\beta^{l}}]$$
-On a side note, for clarity when $\beta * l = q$ we can write g as:
-$$g = [\beta^{l-1},..., 1]$$
+> Note 
+> When $\beta * l = q$ we can write $g$ as: $g = [\beta^{l-1},..., 1]$
+
 Given an unsigned integer $a \in Z_q$ we can write its decomposition vector of size $l$ as: 
 $$g^{-1}(a) = [a_0, a_1, ..., a_{l-1}] \in Z_{\beta}^l$$
 where we start decomposition with MSBs. This implies $a_0$ is $log(\beta)$ MSBs of $a$.
 
-To recompose $a$, we can calculate the following: 
+To recompose $a$, we may calculate: 
 $$g^{-1}(a)g \approx \sum_{i=0}^{l-1} a_i(\frac{q}{\beta^i})$$
 
-Note that we $\beta * l = q$, then recomposition will be exact.
+> *Note* 
+> Recomposition is exact when $\beta * l = q$
 
 ## Why Decomposition
 
-Decomposition is one the techniques used to decrease noise growth when multiplying a ciphertext with a plaintext. For example, let $ct = LWE_s(m) = (a_0,...,b)$. We can multiply $c$ by $ct$ to produce $LWE_s(cm)$, that is a ciphertext encrypting product $cm$. However notice that after multiplication noise in the ciphertext grows since: 
-$$c(ct) = c(a_0, ..., b) = (ca_0, ..., cb)$$
-and decrypting c(ct) gives the following output: 
-$$c(b - \sum a_is_i) = c(m + e) = cm + ce$$
-Thus the noise in ciphertext after multiplication grows by magnitude of $c$.
+Decomposition is used to decrease noise growth when multiplying a ciphertext with another value in $Z_q$.
 
-We use decomposition to reduce the noise growth. 
+For example, consider the structure of $b^{th}$ component of LWE ciphertext: 
+$$
+b = a\cdot s + e +  m_1
+$$
+if we were to multiply $m_2 \in Z_q$ with $b$ then we will scale the error $e$ by norm of $q$, thus causing error to blow up and making the ciphertext useless. 
 
-Instead of LWE encryption of $m$, we will first multiply $m$ with gadget vector $g$ to produce $mg$ as 
-$$mg = [m\frac{q}{\beta}, m\frac{q}{\beta^2} ..., m\frac{q}{\beta^{l}}]$$
-Then we will encrypt each element of $mg$ to produce $l$ LWE ciphertexts 
-$$g_{lwe} = [LWE_s(m\frac{q}{\beta}), LWE_s(m\frac{q}{\beta^2}) ..., LWE_s(m\frac{q}{\beta^{l}})]$$
-To obtain product $cm$ for $c \in Z_q$, we calculate the following: 
-$$g^{-1}(c)g_{lwe}^T = \sum c_i LWE_s(m\frac{q}{\beta^{i+1}})$$
-Since $c_i LWE_s(m\frac{q}{\beta^{i+1}}) = LWE_s(c_i m\frac{q}{\beta^{i+1}})$, summation of all products results into $LWE_s(m(\sum c_i\frac{q}{\beta^{i+1}})) = LWE_s(mc)$.
+On the other hand, one can reduce the norm of $m_2$ by decomposing it into smaller values. So if one can somehow re-compose $m_2$ while multiplying it with ciphertext(s) encrypting $m_1$, once can produce ciphertext encrypting $m_1m_2$ without causing noise to blow up. 
 
-Note that this time noise growth is $\sum c_i e_i$ which depends on maximum value of $c_i \in Z_{\beta}$.
+Turns out, this isn't doable with single ciphertext of $m_1$. Instead mutliple redundant ciphertext of $m_1$ are required. 
 
-Decomposition trick to reduce noise growth can also be applied to GLWE setting. 
+The idea is to first paramterize decomposition base \beta and level l. Then produce $l$ redundant LWE ciphertexts of $m_1$ as:
+$$LWE_s(g(m_1)) = [LWE_s(m_1\frac{q}{\beta}), LWE_s(m_1\frac{q}{\beta^2}) ..., LWE_s(m_1\frac{q}{\beta^{l}})]$$
+Then decompose $m_2$ and produce gadget vector $g(m_2)$:
+$$g^{-1}(m_2) = [m_{2,0}, m_{2,0}, ..., m_{2,l-1}] \in Z_{\beta}^l$$
+
+Then calculate:
+$$LWE(g(m_1))^T \cdot g^{-1}(m) = \sum_{i=0}^{l-1} m_{2,i}LWE_s(m_1\frac{q}{\beta^{i+1}})$$
+Since,
+$$
+m_{2,i}LWE_s(m_1\frac{q}{\beta^{i+1}}) = LWE_s(m_{2,i}m_1\frac{q}{\beta^{i+1}})
+$$
+
+$m_{2,i}$ is scaled by it's corresponding recomposition factor and summation results in:
+$$LWE_s(m_1m_2)$$
+
+>Note
+>Since norm of $m_{2,i}$ is in worst case equal to norm of $\beta$ the noise grows only by small amount.
 
 
-## Unsigned decomposition
+### Decomposition for GLWE
+
+Same trick to reduce noise growth in LWE setting can be applied to GLWE setting. The only difference is in GLWE setting decomosition of a ring polnomial in $Z_{N,q}$ translates to decompsing its coefficients in $Z_q$.
+
+For ex, decomposition of polynomial $a \in Z_{N,q}$ equals $l$ polynomials in $Z_{N,q}$
+
+## Types of decomposition
+### Unsigned decomposition
 
 Unsigned decomposition is what you will normally think when decomposing an unsigned integer. For ex, decomposition of $a \in Z_q$ is as:
 $$g^{-1}(a) = [a_0, a_1, ..., a_{l-1}] \in Z_{\beta}^l$$
 starting with MSBs of $a$.
-## Signed Decomposition
+### Signed Decomposition
 
-Signed decomposition further improves upon unsigned decomposition in terms of noise growth. Instead of each element of decomposed vector being $\in [0, \beta)$ as in unsigned decomposition, each element is $\in [-\beta/2, \beta/2)$. 
+> Note
+> Signed decomposition is preferred method in practice
 
-To construct signed decomposition of $a \in Z_q$ the idea is to convert decomposed values to their signed representation, but we need to take of carry overs. For example, let decomposition of $a$, starting from LSB, be $[a_0, a_1, ..., a_{l-1}]$. To obtain signed decomposition such that each value $a_i$ is converted to its signed representation $\in [-\beta/2, \beta/2)$ we subtract $\beta/2$ from $a_i$ if $a_i \geq \beta/2$ . If the $a_{i}$ is subtracted then we must add (ie carry over) 1 to $a_{i+1}$ and then convert $a_{i+1}$ to its signed representation. This works because: 
+Signed decomposition further improves upon unsigned decomposition in terms of noise growth. Instead of each element of decomposed vector being $\in [0, \beta)$ as in unsigned decomposition, each element is $\in [-\beta/2, \beta/2)$ (i.e. absolute value is 1/2 of before). 
+
+To construct signed decomposition of $a \in Z_q$ the idea is to convert decomposed values to their signed representation, but we need to take care of carry overs. For example, let decomposition of $a$, starting from LSB, be $[a_0, a_1, ..., a_{l-1}]$. To obtain signed decomposition such that each value $a_i$ is converted to its signed representation $\in [-\beta/2, \beta/2)$ we subtract $\beta$ from $a_i$ if $a_i \geq \beta/2$ . If $a_{i}$ is subtracted then we must add (ie carry over) 1 to $a_{i+1}$ and then convert $a_{i+1}$ to its signed representation. This works because: 
 $$a_{i-1} \beta^{i-1} + a_{i} \beta^{i} = a_{i-1} \beta^{i-1} - \beta^i + a_{i} \beta^{i} + \beta^i = \beta^{i-1}(a_{i-1} - \beta) + \beta^{i}(a_i + 1)$$
 
-There are two effects of using signed decomposition: 
-1. each value $a_i$ in its signed representation is in $\in [-\beta/2, \beta/2)$ and has maximum possible magnitude $\beta/2 - 1$. This means noise growth is half of what will be using unsigned decomposition. 
-2. The maximum representable value, ie $a$, is reduced to $\sum (\beta/2 - 1)\beta^i$. This means we need to limit the value of $a$. (I believe) in practice this is achieved by having $\geq 1$   carry bits. Check [this](https://jeremykun.com/2021/12/11/the-gadget-decomposition-in-fhe/) post for more information.
+The benefits of using signed decomposition are: 
+1. each value $a_i$ in its signed representation is in $\in [-\beta/2, \beta/2)$ and has maximum possible magnitude $\beta/2 - 1$. This means noise growth is half of what it will be in unsigned decomposition. 
+2. The maximum representable value, i.e. $a$, is reduced to $\sum (\beta/2 - 1)\beta^i$. This means we need to limit the value of $a$. TODO: I am unsure how is this handle in practice? Setting padding bit to 1 may handle, but what about the cases where don't want reserver a bit of padding?
+
+For more information on signed decomposition please refer to this [blogpost](https://jeremykun.com/2021/12/11/the-gadget-decomposition-in-fhe/).
 
 
 # Parameters and noise analysis
@@ -399,6 +551,24 @@ $(v_{bs}) \cdot ||w_i||^2 + v_{ks} + v_{drift}$
 
 Where $v_{drift}$ is additional noise due to modulus switching $q \rightarrow 2N$
 
+# Rough points: 
+
+1. To compare PBS accumulation step performance of different parameter sets you can:
+	1. Estimate size of GGSW:
+	   as $(k + 1) \cdot (l \cdot (k+1))$ elements $\in R_q$
+	    Thus, $(k + 1) \cdot (l \cdot (k+1)) \cdot 2^N$ elements $\in Z_q$
+	2. Estimate cost of converting decomposed GLWE ciphertext to fourier domain as: 
+	   $l \cdot (k + 1) \cdot(N \log{N})$
+	3. Since a single $GGSW \times GLWE$ requires as many as there are $Z_q$ elements in GGSW - $(k + 1) \cdot (l \cdot (k+1)) \cdot 2^N$ multiplications and a single PBS accumulation performs $n$ $GGSW \times GLWE$ operations, total cost of PBS roughly equals: 
+	   $(k + 1) \cdot (l \cdot (k+1)) \cdot 2^N$ + $l \cdot (k + 1) \cdot(N \log{N})$ 
+	   
+Note that $l$ is levels in PBS and $n$ is lwe dimension. 
+
+Thanks @icetdrinker for pointing out the formulas for estimating costs. 
+
+2. 
+
+
 
 
 
@@ -407,3 +577,88 @@ TFHE-rs TODO
 2. Replace definitions of base decompositions such that we don't have to assume $\beta l = q$.
 3. 
 
+
+
+---
+Key switching procedure
+
+%% LWE encryption of each bit of $s'$. To use digit decomposition and recomposition during key switching we decompose each bit in $s'$ and encrypt them. That is, 
+1. Decompose $s'_i$ using digit decomposition. Since $s_i$ is a bit, in practice this is omitted. 
+2. Given gadget row vector $G$, calculate $s'_iG = [s'_i\beta^{l-1}, ..., s'_i]$.
+3. Encrypt each element of $s'_iG$ using $s$. This produces $l$ LWE ciphertexts. 
+After encrypt all bits in $s'$ we obtain an 2D array of LWE ciphertext where $j^{th}$ column of $i^{th}$ row is an LWE encryption as $LWE_s(s'_i\beta^{l-{j+1}})$. Let's call this 2D array key switching key $ksk$.
+
+We then perform key switching for LWE encryption $LWE_{s'}(m) = (a'_0,...,b')$ as
+$$LWE_s(m) = (0,...0, b') - \sum_{i=0}^{n-1} G^{-1}(a_i')ksk[i]^T$$
+Notice that $G^{-1}(a_i')ksk[i]^T$ expands to 
+$$[a'_{i0},...,a_{i(n-1)}'][LWE_{s}(s'_i\beta^{l-1}),...,LWE_{s}(s'_i)]^T = LWE(a'_is_i)$$
+but without accumulating large noise since magnitude of each scalar value $a'_{il}$ is limited to base $\beta$. %%
+
+**Decompsition**
+
+
+For example, let $ct = LWE_s(m_1) = (a_0,...,b)$ and we would want to multiply $m_2 \in Z_q$
+
+
+We can multiply $c$ by $ct$ to produce $LWE_s(cm)$, that is a ciphertext encrypting product $cm$. However notice that after multiplication noise in the ciphertext grows since: 
+$$c(ct) = c(a_0, ..., b) = (ca_0, ..., cb)$$
+and decrypting c(ct) gives the following output: 
+$$c(b - \sum a_is_i) = c(m + e) = cm + ce$$
+Thus the noise in ciphertext after multiplication grows by magnitude of $c$.
+
+We use decomposition to reduce the noise growth. 
+
+Instead of LWE encryption of $m$, we will first multiply $m$ with gadget vector $g$ to produce $mg$ as 
+$$mg = [m\frac{q}{\beta}, m\frac{q}{\beta^2} ..., m\frac{q}{\beta^{l}}]$$
+Then we will encrypt each element of $mg$ to produce $l$ LWE ciphertexts 
+$$g_{lwe} = [LWE_s(m\frac{q}{\beta}), LWE_s(m\frac{q}{\beta^2}) ..., LWE_s(m\frac{q}{\beta^{l}})]$$
+To obtain product $cm$ for $c \in Z_q$, we calculate the following: 
+$$g^{-1}(c)g_{lwe}^T = \sum c_i LWE_s(m\frac{q}{\beta^{i+1}})$$
+Since $c_i LWE_s(m\frac{q}{\beta^{i+1}}) = LWE_s(c_i m\frac{q}{\beta^{i+1}})$, summation of all products results into $LWE_s(m(\sum c_i\frac{q}{\beta^{i+1}})) = LWE_s(mc)$.
+
+Note that this time noise growth is $\sum c_i e_i$ which depends on maximum value of $c_i \in Z_{\beta}$.
+
+Decomposition trick to reduce noise growth can also be applied to GLWE setting. 
+
+**External product**
+Then 
+
+We can multiply GLWE  encryption of $m_1$ with GGSW encryption of $m_2$ to get GLWE encryption of $m_1m_2$.
+
+Note that GLWE $sk$ must be same for both.
+
+Also note that there exist a function $G^{-1}$ that produces row vector of size $(k+1)l$ which is inverse of $ct_{glwe}$ such that  for a given GLWE ciphertext $G^{-1}(ct_{glwe})G^T = ct_{glwe}$.
+
+More concretely $G^{-1}$ decomposes each of $k+1$ polynomials in $ct_{glwe} = (a_0, .., a_{k-1}, b)$ into $l$ polynomials with decomposition base $\beta$, thus producing a row vector of size $(k+1)l$ as:
+$$[a_{00}, a_{01},..., a_{0{l-1}}, a_{10}, ..., a_{1{l-1}}, ..., b_{0}, ..., b_{l-1}]$$
+
+You can think of $G^T$ consisting of recomposition values for each of the decomposed polynomials in $G^{-1}$. For example, recomposition for polynomial $a_0$ is:
+$$\sum_{i=0}^{l-1} a_{0i}\beta^{l-{i+1}}$$
+where $\beta^{l-{i+1}}$ values are from the first column of $G^T$. 
+
+
+External product is calculated as: 
+$$ct_{ggsw} \cdot ct_{glwe} = G^{-1}(ct_{glwe}) (\pi + m_2G^T) = G^{-1}(ct_{glwe})\pi + G^{-1}(ct_{glwe})mG^T = GLWE(0) + GLWE(m_1m_2)$$
+
+$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = G^{-1}(ct_{glwe}) (\pi + m_2G^T)$$
+$$= G^{-1}(ct_{glwe}(m_1))\pi + m_2G^{-1}(ct_{glwe}(m_2))G^T$$
+$$=\pi + m_2ct_{glwe}(m_1)$$
+Since $ct_{glwe}(m_1) = \Delta m_1 + e$ and $\pi$ is encryption of 0.
+$$ct_{ggsw}(m_2) \cdot ct_{glwe}(m_1) = \Delta m_2m_1 + m_2e$$
+
+
+TODO: Stop assuming $\beta^l = q$ and rewrite the equations. 
+
+
+## Ciphertext Multiplication
+
+You can easily multiply a GLWE ciphertext with a scalar by multiplying polynomial with the scalar. However, multiplications between two ciphertexts is not trivial. This is because internal product over Torus is not defined, you need to use external product. 
+
+Let $x \in \mathbb{Z}$ and $a \in \mathbb{T}$. External product between $x$ and $a$ is defined as
+$$x \cdot a = a + a + ... + a \space (x \ times)$$
+
+We cannot port this definition directly to encrypted context. In other words, we can cannot add a given GLWE ciphertext by itself $x$ no. of times, where $x$ itself is unknown. To perform ciphertext multiplication between $x \in \mathbb{Z}_{N}[X]$ and $a \in \mathbb{Z}_{N,q}[X]$ we must first encrypt $a$ under GLWE and $x$ under GGSW. Result of their external product equals GLWE encryption of $x \cdot a$, that is 
+$$GLWE(x \cdot a) = GGSW(x) \cdot GLWE(a)$$
+
+%%To clear any confusion recall that we view an element defined over discretized torus through its representation in $\mathbb{Z}_q$. That is $a \in \mathbb{Z}_{N,q}[X]$ is defined over $\mathbb{T}_{N,q}[X]$ as 
+$$a' = q^{-1}\mathbb{Z}_{N,q}[X]$$%%
